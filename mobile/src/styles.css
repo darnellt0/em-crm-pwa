@@ -1,0 +1,216 @@
+/**
+ * Elevated Movements CRM - Mobile App Styles
+ * Includes safe-area support for iOS notch/home indicator
+ */
+
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  /* Safe area insets for iPhone notch and home indicator */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  background-color: #36013f;
+}
+
+/* App container - fills available space */
+#app-container {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  left: env(safe-area-inset-left, 0);
+  right: env(safe-area-inset-right, 0);
+  bottom: env(safe-area-inset-bottom, 0);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* CRM iframe - fills entire container */
+#crm-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: #ffffff;
+}
+
+/* Loading screen */
+#loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #36013f 0%, #4a0152 100%);
+  z-index: 9999;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.loading-content {
+  text-align: center;
+  color: #ffffff;
+  max-width: 300px;
+  padding: 20px;
+}
+
+/* Logo */
+.logo {
+  margin-bottom: 40px;
+  animation: fadeIn 0.8s ease-in-out;
+}
+
+.logo-text {
+  font-size: 72px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  letter-spacing: 4px;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 20px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Loading text */
+.loading-text {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Error state */
+.error-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+}
+
+.error-text {
+  font-size: 18px;
+  color: #ffffff;
+  margin-bottom: 30px;
+  line-height: 1.5;
+}
+
+.retry-button {
+  background-color: #ffffff;
+  color: #36013f;
+  border: none;
+  padding: 12px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 24px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.retry-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Prevent text selection in UI elements */
+#loading-screen {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Hide scrollbars */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Support for landscape orientation */
+@media (orientation: landscape) {
+  .loading-content {
+    max-width: 500px;
+  }
+
+  .logo-text {
+    font-size: 64px;
+  }
+}
+
+/* Tablet and larger screens */
+@media (min-width: 768px) {
+  .loading-content {
+    max-width: 400px;
+  }
+
+  .logo-text {
+    font-size: 96px;
+  }
+
+  .loading-text {
+    font-size: 18px;
+  }
+}

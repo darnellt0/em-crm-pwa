@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+  <title>Elevated Movements CRM</title>
+
+  <!-- Status bar styling -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#36013f">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loading-screen">
+    <div class="loading-content">
+      <div class="logo">
+        <div class="logo-text">EM</div>
+      </div>
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Loading Elevated Movements CRM...</p>
+    </div>
+  </div>
+
+  <!-- Main content container -->
+  <div id="app-container" style="display: none;">
+    <iframe
+      id="crm-frame"
+      src=""
+      frameborder="0"
+      allow="camera; microphone; geolocation"
+      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox allow-downloads"
+    ></iframe>
+  </div>
+
+  <!-- Capacitor Core -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@capacitor/core@6/dist/capacitor.js"></script>
+
+  <!-- App Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

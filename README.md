@@ -1,17 +1,29 @@
-# Elevated Movements CRM - PWA Assets
+# Elevated Movements CRM - Mobile Distribution
 
-This repository hosts the Progressive Web App (PWA) assets for the Elevated Movements CRM Google Apps Script web application. It provides the manifest and icons necessary to make the CRM installable on mobile devices.
+This repository provides two ways to distribute the Elevated Movements CRM as a mobile app:
+
+1. **PWA (Progressive Web App)** - Browser-based installable app
+2. **Native Mobile App** - True native Android and iOS apps via Capacitor
 
 ## What's Included
 
+### PWA Assets (Root Directory)
 - **manifest.json** - PWA manifest file defining app properties, colors, and icons
 - **icon-192.png** - 192x192 app icon (required for Android)
 - **icon-512.png** - 512x512 app icon (required for maskable icon support)
 - **tools/make_icons.py** - Python script to regenerate icons programmatically
 - **.github/workflows/build-icons.yml** - CI workflow to verify icons are up-to-date
 
+### Native Mobile App (mobile/ Directory)
+- **Capacitor project** - Native Android and iOS app wrapper
+- **Deep link support** - `emcrm://` URL scheme for direct navigation
+- **Native features** - Camera, microphone, and native UI
+- **No Google Apps Script banner** - Clean native experience
+- See [mobile/README.md](./mobile/README.md) for full documentation
+
 ## How It Works
 
+### PWA Approach
 This repository uses GitHub Pages to serve static PWA assets that are referenced by the Google Apps Script web app. The manifest and icons cannot be hosted directly on Apps Script, so we host them here and link to them from the Apps Script HTML.
 
 Once GitHub Pages is enabled, the assets will be served from:
@@ -21,7 +33,36 @@ https://YOUR_GH_USERNAME.github.io/em-crm-pwa/icon-192.png
 https://YOUR_GH_USERNAME.github.io/em-crm-pwa/icon-512.png
 ```
 
-## Setup Instructions
+### Native App Approach
+The `mobile/` directory contains a Capacitor project that wraps the Google Apps Script web app in a native WebView. This provides:
+- True native Android and iOS apps
+- Removal of Google Apps Script banner
+- Deep link support (`emcrm://open?contact=Name`)
+- Native camera and microphone access
+- App Store / Play Store distribution
+
+## Quick Start
+
+Choose your distribution method:
+
+### Option A: PWA (Browser-Based)
+Follow the [PWA Setup Instructions](#pwa-setup-instructions) below.
+
+### Option B: Native Mobile App
+See the complete guide in [mobile/README.md](./mobile/README.md).
+
+Quick commands:
+```bash
+cd mobile
+npm install
+npm run build
+npm run add:android    # Add Android platform
+npm run add:ios        # Add iOS platform (macOS only)
+npm run open:android   # Open Android Studio
+npm run open:ios       # Open Xcode
+```
+
+## PWA Setup Instructions
 
 ### 1. Create GitHub Repository
 
@@ -177,9 +218,23 @@ https://script.google.com/macros/s/AKfycbymRy5KW0vqL-cHcU73wzZtNe3J8syB8tbFVeM2w
 
 This repository contains assets for the Elevated Movements CRM application.
 
+## Build EM CRM App (Native Mobile)
+
+For complete native mobile app build instructions, see:
+
+**[mobile/README.md](./mobile/README.md)**
+
+Key features:
+- Removes Google Apps Script banner
+- Deep link support: `emcrm://open?contact=Name`
+- Camera & microphone permissions
+- App Store & Play Store ready
+- Full native experience
+
 ## Support
 
 For issues with:
-- PWA installation → Check this README troubleshooting section
-- Apps Script functionality → Contact Elevated Movements support
-- Icon generation → Review `tools/make_icons.py` script
+- **PWA installation** → Check the PWA troubleshooting section above
+- **Native mobile app** → See [mobile/README.md](./mobile/README.md)
+- **Apps Script functionality** → Contact Elevated Movements support
+- **Icon generation** → Review `tools/make_icons.py` script

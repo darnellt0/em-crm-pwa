@@ -1,0 +1,37 @@
+{
+  "name": "em-crm-mobile",
+  "version": "1.0.0",
+  "description": "Elevated Movements CRM - Native Mobile App",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.js",
+    "sync": "npx cap sync",
+    "sync:android": "npx cap sync android",
+    "sync:ios": "npx cap sync ios",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "add:android": "npx cap add android",
+    "add:ios": "npx cap add ios",
+    "update": "npx cap update"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  },
+  "keywords": [
+    "capacitor",
+    "mobile",
+    "crm",
+    "elevated-movements"
+  ],
+  "author": "Elevated Movements",
+  "license": "UNLICENSED",
+  "private": true
+}
