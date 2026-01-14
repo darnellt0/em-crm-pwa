@@ -1,0 +1,82 @@
+name: Build and Verify Icons
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-icons:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Pillow
+      run: |
+        python -m pip install --upgrade pip
+        pip install Pillow
+
+    - name: Generate icons
+      run: python tools/make_icons.py
+
+    - name: Verify icons are committed
+      run: |
+        if [[ -n $(git status --porcelain) ]]; then
+          echo "ERROR: Generated icons differ from committed versions!"
+          echo "Please run 'python tools/make_icons.py' and commit the icons."
+          git status
+          git diff
+          exit 1
+        else
+          echo "SUCCESS: Icons are up to date!"
+        fi
+
+    - name: Verify icon sizes
+      run: |
+        if [ ! -f "icon-192.png" ]; then
+          echo "ERROR: icon-192.png not found!"
+          exit 1
+        fi
+        if [ ! -f "icon-512.png" ]; then
+          echo "ERROR: icon-512.png not found!"
+          exit 1
+        fi
+
+        # Check icon dimensions using Python
+        python -c "
+from PIL import Image
+import sys
+
+errors = []
+
+# Check 192x192 icon
+try:
+    img_192 = Image.open('icon-192.png')
+    if img_192.size != (192, 192):
+        errors.append(f'icon-192.png has wrong size: {img_192.size}, expected (192, 192)')
+except Exception as e:
+    errors.append(f'Failed to validate icon-192.png: {e}')
+
+# Check 512x512 icon
+try:
+    img_512 = Image.open('icon-512.png')
+    if img_512.size != (512, 512):
+        errors.append(f'icon-512.png has wrong size: {img_512.size}, expected (512, 512)')
+except Exception as e:
+    errors.append(f'Failed to validate icon-512.png: {e}')
+
+if errors:
+    for error in errors:
+        print(f'ERROR: {error}')
+    sys.exit(1)
+else:
+    print('SUCCESS: All icons have correct dimensions!')
+"
