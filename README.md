@@ -1,4 +1,4 @@
-# Elevated Movements CRM V1.6
+# Elevated Movements CRM V1.6.1
 
 AI-powered Contact Relationship Management system built with Next.js 14, Prisma, PostgreSQL (pgvector), Auth.js, and Ollama.
 
@@ -10,8 +10,10 @@ AI-powered Contact Relationship Management system built with Next.js 14, Prisma,
 - **Semantic Search** — Natural language search across approved memories using pgvector cosine similarity
 - **Opportunities Pipeline** — Kanban-style drag-and-drop board for tracking deals through stages
 - **Task Management** — Priority levels (low/medium/high/urgent), due dates, contact linking
-- **CSV Import** — Upload CSV files with auto column mapping and deduplication
+- **CSV Import** — 5-step staged wizard (Upload → Map → Validate → Run → Done) with deduplication preview
+- **Saved Views** — Save and share filtered/sorted contact list configurations
 - **Programs & Enrollments** — Track programs and contact enrollments
+- **Workflow Automation** — n8n integration for building custom automation workflows
 - **Role-Based Access Control** — Admin, partner_admin, staff, read_only roles with hierarchy
 - **Auth.js Magic Links** — Passwordless email authentication via SMTP
 
@@ -25,6 +27,8 @@ AI-powered Contact Relationship Management system built with Next.js 14, Prisma,
 | Auth | Auth.js (NextAuth v4) with Email Provider |
 | AI/LLM | Ollama (qwen2.5:7b-instruct + nomic-embed-text) |
 | UI | Tailwind CSS + shadcn/ui + Radix UI |
+| Automation | n8n (self-hosted) |
+| Email (dev) | MailHog |
 | Notifications | Sonner |
 
 ## Prerequisites
@@ -44,7 +48,7 @@ cd em-crm-pwa
 cp .env.example .env
 # Edit .env with your SMTP credentials and secrets
 
-# 3. Start infrastructure (PostgreSQL + Ollama)
+# 3. Start infrastructure (PostgreSQL + Ollama + MailHog + n8n)
 docker compose up -d
 
 # 4. Pull Ollama models
@@ -62,6 +66,15 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and sign in with your email.
+
+### Service URLs
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| CRM App | [http://localhost:3000](http://localhost:3000) | Main application |
+| MailHog | [http://localhost:8025](http://localhost:8025) | Email testing UI (catches all outbound emails in dev) |
+| n8n | [http://localhost:5678](http://localhost:5678) | Workflow automation builder |
+| Ollama | [http://localhost:11434](http://localhost:11434) | AI/LLM API |
 
 ## Environment Variables
 
@@ -105,7 +118,8 @@ src/
 │   │   ├── memory/           # Memory queue, bulk, search
 │   │   ├── embeddings/       # Embedding worker
 │   │   ├── programs/         # Programs CRUD
-│   │   ├── imports/          # CSV import pipeline
+│   │   ├── imports/          # CSV import pipeline (upload/map/validate/run/rows)
+│   │   ├── views/            # Saved Views CRUD
 │   │   ├── users/            # User management
 │   │   └── dashboard/        # Dashboard stats
 │   └── auth/signin/          # Magic link sign-in page
@@ -125,6 +139,32 @@ prisma/
 └── migrations/               # pgvector setup
 ```
 
+## Saved Views
+
+Saved Views let you persist filtered and sorted contact list configurations. From the Contacts page:
+
+1. Apply filters (stage, search, tags) and sorting
+2. Click **Save View** to name and save the current configuration
+3. Toggle **Shared** to make the view available to all team members
+4. Switch between saved views using the dropdown in the page header
+
+API endpoints: `GET/POST /api/views`, `GET/PATCH/DELETE /api/views/[id]`
+
+## CSV Import Wizard
+
+The import follows a 5-step staged workflow:
+
+1. **Upload** — Drag-and-drop or browse for a CSV file
+2. **Map Columns** — Auto-mapped columns with manual override (CSV column → CRM field)
+3. **Validate** — Dry-run deduplication preview showing per-row actions:
+   - **Will Create** — No matching contact found by email or phone
+   - **Will Update** — Existing contact matched (tags are merged, not overwritten)
+   - **Will Skip** — Row has insufficient identifying data
+4. **Run** — Execute the import with the previewed actions
+5. **Done** — Summary with created/updated/skipped/errored counts
+
+API endpoints: `POST /api/imports` → `/upload` → `/map` → `/validate` → `/run`, `GET /rows`
+
 ## Embedding Worker
 
 To generate embeddings for approved memories, call the internal endpoint:
@@ -135,7 +175,17 @@ curl -X POST http://localhost:3000/api/embeddings/run \
   -H "Content-Type: application/json"
 ```
 
-This can be scheduled via cron or triggered after memory approval.
+This can be scheduled via cron, n8n workflow, or triggered after memory approval.
+
+## n8n Workflow Automation
+
+n8n is included in the Docker Compose stack for building custom automation workflows. Access it at [http://localhost:5678](http://localhost:5678).
+
+Example use cases:
+- Schedule the embedding worker to run every hour
+- Send Slack/email notifications when new contacts are imported
+- Trigger memory extraction on a schedule for batch-processed interactions
+- Sync contacts with external CRMs or marketing tools
 
 ## Role Hierarchy
 
