@@ -1,0 +1,249 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+enum Role {
+  admin
+  partner_admin
+  staff
+  read_only
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  role          Role      @default(staff)
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  ownedContacts       Contact[]      @relation("ContactOwner")
+  ownedTasks          Task[]         @relation("TaskOwner")
+  createdInteractions Interaction[]  @relation("InteractionCreator")
+  reviewedMemories    AiMemoryItem[] @relation("MemoryReviewer")
+  savedViews          SavedView[]
+  importJobs          ImportJob[]
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Contact {
+  id              String    @id @default(uuid())
+  firstName       String?
+  lastName        String?
+  email           String?   @unique
+  phone           String?
+  phoneNormalized String?   @unique
+  persona         String?
+  source          String?
+  lifecycleStage  String    @default("lead")
+  leadScore       Int       @default(0)
+  tags            String[]  @default([])
+  lastTouchAt     DateTime?
+  nextFollowUpAt  DateTime?
+  ownerUserId     String?
+  owner           User?     @relation("ContactOwner", fields: [ownerUserId], references: [id])
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+
+  interactions  Interaction[]
+  opportunities Opportunity[]
+  enrollments   Enrollment[]
+  tasks         Task[]
+  memories      AiMemoryItem[]
+  importRows    ImportRow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([phoneNormalized])
+  @@index([lifecycleStage])
+  @@index([ownerUserId])
+  @@index([nextFollowUpAt])
+}
+
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  website   String?
+  contacts  Contact[]
+  createdAt DateTime  @default(now())
+}
+
+model Opportunity {
+  id        String    @id @default(uuid())
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id])
+  name      String
+  value     Decimal?  @db.Decimal(12, 2)
+  stage     String
+  closeDate DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Interaction {
+  id              String   @id @default(uuid())
+  contactId       String
+  contact         Contact  @relation(fields: [contactId], references: [id])
+  type            String
+  summary         String?  @db.Text
+  outcome         String?  @db.Text
+  occurredAt      DateTime @default(now())
+  createdByUserId String?
+  creator         User?    @relation("InteractionCreator", fields: [createdByUserId], references: [id])
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id])
+  ownerUserId String
+  owner       User      @relation("TaskOwner", fields: [ownerUserId], references: [id])
+  title       String
+  description String?   @db.Text
+  priority    String    @default("medium")
+  status      String    @default("todo")
+  dueAt       DateTime?
+  source      String?   @default("manual")
+  createdAt   DateTime  @default(now())
+
+  @@index([ownerUserId])
+  @@index([dueAt])
+  @@index([status])
+}
+
+model Program {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id         String   @id @default(uuid())
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id])
+  programId  String
+  program    Program  @relation(fields: [programId], references: [id])
+  status     String
+  enrolledAt DateTime @default(now())
+}
+
+model AiMemoryItem {
+  id               String             @id @default(uuid())
+  contactId        String
+  contact          Contact            @relation(fields: [contactId], references: [id])
+  content          String             @db.Text
+  status           String             @default("proposed")
+  isPinned         Boolean            @default(false)
+  proposedBy       String?
+  rejectionReason  String?
+  reviewedByUserId String?
+  reviewer         User?              @relation("MemoryReviewer", fields: [reviewedByUserId], references: [id])
+  reviewedAt       DateTime?
+  embedding        AiMemoryEmbedding?
+  createdAt        DateTime           @default(now())
+
+  @@index([contactId])
+  @@index([status])
+  @@index([reviewedAt])
+}
+
+model AiMemoryEmbedding {
+  id              String                      @id @default(uuid())
+  memoryItemId    String                      @unique
+  memoryItem      AiMemoryItem                @relation(fields: [memoryItemId], references: [id], onDelete: Cascade)
+  embedding       Unsupported("vector(768)")?
+  embeddingStatus String                      @default("pending")
+  model           String                      @default("nomic-embed-text")
+  error           String?
+  updatedAt       DateTime                    @updatedAt
+
+  @@index([embeddingStatus])
+}
+
+model SavedView {
+  id          String   @id @default(uuid())
+  ownerUserId String
+  owner       User     @relation(fields: [ownerUserId], references: [id])
+  entity      String
+  name        String
+  isShared    Boolean  @default(false)
+  filters     Json     @default("{}")
+  sort        Json     @default("[]")
+  columns     Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ImportJob {
+  id              String      @id @default(uuid())
+  createdByUserId String
+  creator         User        @relation(fields: [createdByUserId], references: [id])
+  entity          String      @default("contacts")
+  filename        String?
+  status          String      @default("uploaded")
+  mapping         Json?
+  stats           Json?
+  rows            ImportRow[]
+  createdAt       DateTime    @default(now())
+}
+
+model ImportRow {
+  id               String    @id @default(uuid())
+  jobId            String
+  job              ImportJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rowIndex         Int
+  raw              Json
+  normalized       Json?
+  status           String    @default("pending")
+  action           String?
+  matchType        String?
+  matchedContactId String?
+  matchedContact   Contact?  @relation(fields: [matchedContactId], references: [id])
+  error            String?
+
+  @@unique([jobId, rowIndex])
+}
