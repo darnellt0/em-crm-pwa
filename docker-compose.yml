@@ -2,6 +2,8 @@ version: "3.9"
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: em_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: em_crm
       POSTGRES_USER: em_app
@@ -11,11 +13,31 @@ services:
     volumes:
       - em_pgdata:/var/lib/postgresql/data
 
+  # Email Testing (MailHog) - REQUIRED for local Magic Links
   mailhog:
-    image: mailhog/mailhog:latest
+    image: mailhog/mailhog
+    container_name: em_mailhog
+    restart: unless-stopped
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI
+
+  # Automation & Workers (n8n)
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: em_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=America/Los_Angeles
+    depends_on:
+      - postgres
 
 volumes:
   em_pgdata:

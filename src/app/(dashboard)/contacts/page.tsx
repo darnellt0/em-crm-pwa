@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useApi, apiPost } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,10 @@ import {
   Calendar,
   CheckSquare,
   ArrowUpDown,
+  Bookmark,
+  Save,
+  Trash2,
+  Share2,
 } from "lucide-react";
 
 const STAGES = ["lead", "prospect", "opportunity", "customer", "subscriber", "evangelist", "other"];
@@ -48,11 +52,33 @@ const stageColors: Record<string, string> = {
   other: "bg-gray-100 text-gray-800",
 };
 
+interface SavedView {
+  id: string;
+  name: string;
+  entity: string;
+  isShared: boolean;
+  filters: Record<string, any>;
+  sort: any[];
+  columns: string[];
+  ownerUserId: string;
+}
+
 export default function ContactsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [newViewShared, setNewViewShared] = useState(false);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+
+  // Fetch saved views for contacts
+  const { data: viewsData, refetch: refetchViews } = useApi<any>(
+    "/api/views?entity=contacts",
+    []
+  );
+  const savedViews: SavedView[] = viewsData?.views || [];
 
   const params = new URLSearchParams();
   if (search) params.set("q", search);
@@ -65,6 +91,65 @@ export default function ContactsPage() {
 
   const contacts = data?.items || [];
   const total = data?.total || 0;
+
+  // Apply a saved view
+  const applyView = useCallback((view: SavedView) => {
+    setActiveViewId(view.id);
+    const filters = view.filters || {};
+    if (filters.search) setSearch(filters.search);
+    else setSearch("");
+    if (filters.stage) setStageFilter(filters.stage);
+    else setStageFilter("");
+  }, []);
+
+  // Clear active view
+  const clearView = useCallback(() => {
+    setActiveViewId(null);
+    setSearch("");
+    setStageFilter("");
+  }, []);
+
+  // Save current filters as a new view
+  const handleSaveView = async () => {
+    if (!newViewName.trim()) {
+      toast.error("View name is required");
+      return;
+    }
+    try {
+      await apiPost("/api/views", {
+        entity: "contacts",
+        name: newViewName.trim(),
+        isShared: newViewShared,
+        filters: {
+          ...(search ? { search } : {}),
+          ...(stageFilter && stageFilter !== "all" ? { stage: stageFilter } : {}),
+        },
+        sort: [],
+        columns: [],
+      });
+      toast.success(`View "${newViewName}" saved`);
+      setNewViewName("");
+      setNewViewShared(false);
+      setSaveViewOpen(false);
+      refetchViews();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save view");
+    }
+  };
+
+  // Delete a saved view
+  const handleDeleteView = async (viewId: string, viewName: string) => {
+    try {
+      const res = await fetch(`/api/views/${viewId}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast.success(`View "${viewName}" deleted`);
+      if (activeViewId === viewId) clearView();
+      refetchViews();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete view");
+    }
+  };
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -124,64 +209,170 @@ export default function ContactsPage() {
           <h1 className="text-2xl font-bold">Contacts</h1>
           <p className="text-muted-foreground">{total} total contacts</p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Contact
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>New Contact</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" name="firstName" required />
+        <div className="flex items-center gap-2">
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Contact
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>New Contact</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreate} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input id="firstName" name="firstName" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input id="lastName" name="lastName" />
+                  </div>
                 </div>
                 <div>
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" name="lastName" />
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" name="email" type="email" />
                 </div>
+                <div>
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" name="phone" />
+                </div>
+                <div>
+                  <Label htmlFor="lifecycleStage">Stage</Label>
+                  <select
+                    id="lifecycleStage"
+                    name="lifecycleStage"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    defaultValue="lead"
+                  >
+                    {STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button type="submit">Create</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Saved Views + Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        {/* Saved Views Dropdown */}
+        <div className="flex items-center gap-2">
+          <Select
+            value={activeViewId || "none"}
+            onValueChange={(val) => {
+              if (val === "none") {
+                clearView();
+              } else {
+                const view = savedViews.find((v) => v.id === val);
+                if (view) applyView(view);
+              }
+            }}
+          >
+            <SelectTrigger className="w-[200px]">
+              <div className="flex items-center gap-2">
+                <Bookmark className="h-3.5 w-3.5" />
+                <SelectValue placeholder="Saved Views" />
               </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" name="email" type="email" />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" name="phone" />
-              </div>
-              <div>
-                <Label htmlFor="lifecycleStage">Stage</Label>
-                <select
-                  id="lifecycleStage"
-                  name="lifecycleStage"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  defaultValue="lead"
-                >
-                  {STAGES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </option>
-                  ))}
-                </select>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">All Contacts</SelectItem>
+              {savedViews.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  <span className="flex items-center gap-1.5">
+                    {v.name}
+                    {v.isShared && <Share2 className="h-3 w-3 text-muted-foreground" />}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Save current view */}
+          <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="icon" title="Save current filters as a view">
+                <Save className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Save View</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="viewName">View Name</Label>
+                  <Input
+                    id="viewName"
+                    value={newViewName}
+                    onChange={(e) => setNewViewName(e.target.value)}
+                    placeholder="e.g., Warm Leads"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="viewShared"
+                    checked={newViewShared}
+                    onCheckedChange={(v) => setNewViewShared(v === true)}
+                  />
+                  <Label htmlFor="viewShared" className="text-sm">
+                    Share with team
+                  </Label>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <p>Current filters that will be saved:</p>
+                  <ul className="list-disc list-inside mt-1">
+                    {search && <li>Search: &quot;{search}&quot;</li>}
+                    {stageFilter && stageFilter !== "all" && (
+                      <li>Stage: {stageFilter}</li>
+                    )}
+                    {!search && (!stageFilter || stageFilter === "all") && (
+                      <li>No filters applied</li>
+                    )}
+                  </ul>
+                </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button type="submit">Create</Button>
+                <Button onClick={handleSaveView}>Save View</Button>
               </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </DialogContent>
+          </Dialog>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+          {/* Delete active view */}
+          {activeViewId && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Delete this saved view"
+              onClick={() => {
+                const view = savedViews.find((v) => v.id === activeViewId);
+                if (view && confirm(`Delete view "${view.name}"?`)) {
+                  handleDeleteView(view.id, view.name);
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
+        </div>
+
+        {/* Search + Stage Filter */}
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
