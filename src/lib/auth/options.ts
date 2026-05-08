@@ -51,7 +51,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, user }) {
       if (session.user) {
         (session.user as any).id = user.id;
-        // Fetch role from DB
+        // Fetch role from DB on every session read
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
           select: { role: true },
@@ -61,38 +61,35 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user }) {
-      // Multi-user Day 1 role assignment
+      // Role assignment for new users.
+      // We check AFTER the adapter has already written the user row (this callback
+      // fires after the user record exists), so no setTimeout is needed.
       if (user.email) {
         const existingUser = await prisma.user.findUnique({
           where: { email: user.email },
           select: { id: true, role: true },
         });
 
-        if (!existingUser) {
-          // New user — check how many users exist
+        if (existingUser && existingUser.role === "staff") {
+          // Only auto-promote if still on the default "staff" role.
+          // Seeded users (admin/partner_admin) are left untouched.
           const userCount = await prisma.user.count();
-          let assignRole: "admin" | "partner_admin" | "staff" = "staff";
+          let assignRole: "admin" | "partner_admin" | "staff" | null = null;
 
-          if (userCount === 0) {
-            // First user ever → admin
+          if (userCount === 1) {
+            // This is the very first user in the system → admin
             assignRole = "admin";
-          } else if (userCount === 1) {
-            // Second distinct user → partner_admin
+          } else if (userCount === 2) {
+            // Second user → partner_admin
             assignRole = "partner_admin";
           }
 
-          // The adapter will create the user; we update role after creation
-          // We use a setTimeout trick since the adapter creates the user in the same transaction
-          setTimeout(async () => {
-            try {
-              await prisma.user.updateMany({
-                where: { email: user.email! },
-                data: { role: assignRole },
-              });
-            } catch (e) {
-              console.error("Failed to assign role:", e);
-            }
-          }, 500);
+          if (assignRole) {
+            await prisma.user.update({
+              where: { id: existingUser.id },
+              data: { role: assignRole },
+            });
+          }
         }
       }
       return true;

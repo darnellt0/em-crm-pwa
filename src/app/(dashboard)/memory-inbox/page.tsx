@@ -146,11 +146,14 @@ export default function MemoryInboxPage() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Inbox className="h-12 w-12 mx-auto mb-3 opacity-50" />
+        <div className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/20">
+          <Inbox className="h-12 w-12 mx-auto mb-3 opacity-40" />
           <p className="text-lg font-medium">Inbox is empty</p>
-          <p className="text-sm">
-            AI-proposed memories will appear here when you log interactions with contacts
+          <p className="text-sm mt-1">
+            AI-proposed memories will appear here after you log interactions with a summary.
+          </p>
+          <p className="text-xs mt-2">
+            Note: Ollama must be running locally for AI extraction to work.
           </p>
         </div>
       ) : (

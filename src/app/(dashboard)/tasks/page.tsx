@@ -155,9 +155,14 @@ export default function TasksPage() {
           ))}
         </div>
       ) : tasks.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>No tasks found</p>
+        <div className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/20">
+          <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p className="font-medium">No tasks found</p>
+          <p className="text-sm mt-1">
+            {statusFilter === "open"
+              ? "You're all caught up! Click \"New Task\" to add one."
+              : "No tasks match this filter."}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">

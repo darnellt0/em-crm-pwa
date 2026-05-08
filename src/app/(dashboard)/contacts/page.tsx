@@ -493,7 +493,8 @@ export default function ContactsPage() {
               <tr>
                 <td colSpan={6} className="p-8 text-center text-muted-foreground">
                   <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>No contacts found</p>
+                  <p className="font-medium">No contacts found</p>
+                  <p className="text-sm mt-1">Click &ldquo;Add Contact&rdquo; above to create your first contact, or use Import to upload a CSV file.</p>
                 </td>
               </tr>
             ) : (

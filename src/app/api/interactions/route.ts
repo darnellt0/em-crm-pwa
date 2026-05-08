@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
                 content: p.content,
                 status: "proposed",
                 isPinned: p.pin || false,
-                proposedBy: "ai:qwen2.5:7b-instruct",
+                proposedBy: `ai:${process.env.OLLAMA_MODEL || "qwen2.5:7b-instruct"}`,
               })),
             });
           }

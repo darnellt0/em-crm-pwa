@@ -110,9 +110,10 @@ export default function ProgramsPage() {
           ))}
         </div>
       ) : programs.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <GraduationCap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>No programs yet</p>
+        <div className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/20">
+          <GraduationCap className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p className="font-medium">No programs yet</p>
+          <p className="text-sm mt-1">Create a program (e.g. &ldquo;Leadership Cohort&rdquo;) to track enrollments.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

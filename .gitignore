@@ -61,3 +61,6 @@ mobile/node_modules
 mobile/.gradle
 mobile/android
 mobile/ios
+
+# Backups
+backups/

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,9 @@ import {
   Pin,
   MessageSquare,
   CheckSquare,
+  TrendingUp,
+  AlertCircle,
+  Clock,
 } from "lucide-react";
 
 const stageColors: Record<string, string> = {
@@ -52,12 +56,20 @@ export default function ContactDetailPage() {
   const { data: tasksData, refetch: refetchTasks } = useApi<any>(
     `/api/contacts/${id}/tasks`
   );
+  const { data: oppsData } = useApi<any>(`/api/opportunities?contactId=${id}`);
   const [interactionOpen, setInteractionOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
 
   const contact = contactData?.contact;
   const interactions = interactionsData?.interactions || [];
   const tasks = tasksData?.tasks || [];
+  const opportunities = oppsData?.opportunities || [];
+
+  const openTasks = tasks.filter((t: any) => t.status !== "done");
+  const overdueTasks = openTasks.filter(
+    (t: any) => t.dueAt && new Date(t.dueAt) < new Date()
+  );
+  const lastInteraction = interactions[0];
 
   const handleAddInteraction = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -119,7 +131,7 @@ export default function ContactDetailPage() {
   if (!contact) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">Contact not found</p>
+        <p className="text-muted-foreground">Contact not found.</p>
         <Link href="/contacts">
           <Button variant="outline" className="mt-4">
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -132,6 +144,7 @@ export default function ContactDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/contacts">
           <Button variant="ghost" size="icon">
@@ -155,14 +168,41 @@ export default function ContactDetailPage() {
         </div>
       </div>
 
-      {/* Contact Info Cards */}
+      {/* Next Action Banner */}
+      {(overdueTasks.length > 0 || contact.nextFollowUpAt) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+          {overdueTasks.length > 0 ? (
+            <>
+              <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-destructive">
+                  {overdueTasks.length} overdue task{overdueTasks.length > 1 ? "s" : ""}
+                </p>
+                <p className="text-sm text-muted-foreground">{overdueTasks[0].title}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <Clock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Follow-up due</p>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(contact.nextFollowUpAt).toLocaleDateString()}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Info Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardContent className="pt-6 space-y-3">
             {contact.email && (
               <div className="flex items-center gap-2 text-sm">
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
+                <a href={`mailto:${contact.email}`} className="text-primary hover:underline truncate">
                   {contact.email}
                 </a>
               </div>
@@ -189,6 +229,11 @@ export default function ContactDetailPage() {
                 Org: {contact.organization.name}
               </div>
             )}
+            {lastInteraction && (
+              <div className="text-xs text-muted-foreground pt-1 border-t">
+                Last touch: {new Date(lastInteraction.occurredAt).toLocaleDateString()}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -198,9 +243,15 @@ export default function ContactDetailPage() {
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
             <p>{contact._count?.interactions || 0} interactions</p>
-            <p>{contact._count?.tasks || 0} tasks</p>
+            <p>
+              {openTasks.length} open task{openTasks.length !== 1 ? "s" : ""}
+              {overdueTasks.length > 0 && (
+                <span className="text-destructive ml-1">({overdueTasks.length} overdue)</span>
+              )}
+            </p>
             <p>{contact._count?.opportunities || 0} opportunities</p>
-            <p>{contact._count?.memories || 0} memories</p>
+            <p>{contact._count?.enrollments || 0} enrollments</p>
+            <p>{contact._count?.memories || 0} approved memories</p>
           </CardContent>
         </Card>
 
@@ -222,25 +273,44 @@ export default function ContactDetailPage() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No approved memories yet</p>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>No approved memories yet.</p>
+                <p className="text-xs">Log an interaction with a summary to trigger AI extraction, then approve it in Memory Inbox.</p>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs: Interactions, Tasks */}
+      {/* Tabs: Interactions, Tasks, Opportunities */}
       <Tabs defaultValue="interactions">
         <TabsList>
           <TabsTrigger value="interactions" className="gap-2">
             <MessageSquare className="h-4 w-4" />
             Interactions
+            {interactions.length > 0 && (
+              <span className="ml-1 text-xs bg-muted rounded-full px-1.5">{interactions.length}</span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="tasks" className="gap-2">
             <CheckSquare className="h-4 w-4" />
             Tasks
+            {openTasks.length > 0 && (
+              <span className={`ml-1 text-xs rounded-full px-1.5 ${overdueTasks.length > 0 ? "bg-destructive text-destructive-foreground" : "bg-muted"}`}>
+                {openTasks.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="opportunities" className="gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Opportunities
+            {opportunities.length > 0 && (
+              <span className="ml-1 text-xs bg-muted rounded-full px-1.5">{opportunities.length}</span>
+            )}
           </TabsTrigger>
         </TabsList>
 
+        {/* Interactions Tab */}
         <TabsContent value="interactions" className="space-y-4">
           <div className="flex justify-end">
             <Dialog open={interactionOpen} onOpenChange={setInteractionOpen}>
@@ -277,7 +347,7 @@ export default function ContactDetailPage() {
                   </div>
                   <div>
                     <Label htmlFor="outcome">Outcome (optional)</Label>
-                    <Input id="outcome" name="outcome" />
+                    <Input id="outcome" name="outcome" placeholder="e.g. Scheduled follow-up call" />
                   </div>
                   <DialogFooter>
                     <DialogClose asChild>
@@ -291,9 +361,10 @@ export default function ContactDetailPage() {
           </div>
 
           {interactions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No interactions logged yet</p>
+            <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/20">
+              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="font-medium">No interactions yet</p>
+              <p className="text-sm mt-1">Click &ldquo;Log Interaction&rdquo; to record a call, email, or meeting.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -324,6 +395,7 @@ export default function ContactDetailPage() {
           )}
         </TabsContent>
 
+        {/* Tasks Tab */}
         <TabsContent value="tasks" className="space-y-4">
           <div className="flex justify-end">
             <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
@@ -378,9 +450,10 @@ export default function ContactDetailPage() {
           </div>
 
           {tasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No tasks yet</p>
+            <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/20">
+              <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="font-medium">No tasks yet</p>
+              <p className="text-sm mt-1">Add a task to track your next action for this contact.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -396,14 +469,50 @@ export default function ContactDetailPage() {
                         {t.title}
                       </p>
                       {t.dueAt && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className={`text-xs ${new Date(t.dueAt) < new Date() && t.status !== "done" ? "text-destructive" : "text-muted-foreground"}`}>
                           Due: {new Date(t.dueAt).toLocaleDateString()}
+                          {new Date(t.dueAt) < new Date() && t.status !== "done" && " · Overdue"}
                         </p>
                       )}
                     </div>
                     <Badge variant={t.priority === "urgent" ? "destructive" : "outline"}>
                       {t.priority}
                     </Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Opportunities Tab */}
+        <TabsContent value="opportunities" className="space-y-4">
+          {opportunities.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/20">
+              <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="font-medium">No opportunities yet</p>
+              <p className="text-sm mt-1">
+                Add opportunities from the{" "}
+                <Link href="/pipeline" className="text-primary underline">
+                  Pipeline
+                </Link>{" "}
+                page.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {opportunities.map((o: any) => (
+                <Card key={o.id}>
+                  <CardContent className="pt-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{o.name}</p>
+                      <p className="text-xs text-muted-foreground">{o.stage}</p>
+                    </div>
+                    {o.value && (
+                      <p className="text-sm font-semibold">
+                        ${Number(o.value).toLocaleString()}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               ))}

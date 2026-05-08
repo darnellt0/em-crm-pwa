@@ -175,6 +175,9 @@ export default function PipelinePage() {
                   </p>
                 )}
                 <div className="space-y-2 min-h-[200px] rounded-lg bg-muted/30 p-2">
+                  {stageOpps.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center pt-8 opacity-60">Drop cards here</p>
+                  )}
                   {stageOpps.map((opp: any) => (
                     <Card
                       key={opp.id}
