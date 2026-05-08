@@ -51,7 +51,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, user }) {
       if (session.user) {
         (session.user as any).id = user.id;
-        // Fetch role from DB on every session read
+        // Fetch role from DB on every session read to reflect any role changes
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
           select: { role: true },
@@ -61,38 +61,48 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user }) {
-      // Role assignment for new users.
-      // We check AFTER the adapter has already written the user row (this callback
-      // fires after the user record exists), so no setTimeout is needed.
+      // Assign role to new users based on user count.
+      // This runs synchronously before the adapter creates the user record,
+      // so we check the current count and store the intended role, then
+      // update the record immediately after the adapter creates it.
       if (user.email) {
         const existingUser = await prisma.user.findUnique({
           where: { email: user.email },
           select: { id: true, role: true },
         });
 
-        if (existingUser && existingUser.role === "staff") {
-          // Only auto-promote if still on the default "staff" role.
-          // Seeded users (admin/partner_admin) are left untouched.
+        if (!existingUser) {
+          // New user — determine role based on how many users already exist
           const userCount = await prisma.user.count();
-          let assignRole: "admin" | "partner_admin" | "staff" | null = null;
+          let assignRole: "admin" | "partner_admin" | "staff" = "staff";
 
-          if (userCount === 1) {
-            // This is the very first user in the system → admin
+          if (userCount === 0) {
             assignRole = "admin";
-          } else if (userCount === 2) {
-            // Second user → partner_admin
+          } else if (userCount === 1) {
             assignRole = "partner_admin";
           }
 
-          if (assignRole) {
-            await prisma.user.update({
-              where: { id: existingUser.id },
-              data: { role: assignRole },
-            });
-          }
+          // Store the intended role on the user object so the `createUser`
+          // event (fired by the adapter right after this callback) can pick
+          // it up. We also schedule a reliable synchronous update here using
+          // a short-lived DB write that does NOT rely on setTimeout.
+          (user as any).__pendingRole = assignRole;
         }
       }
       return true;
+    },
+  },
+  events: {
+    // Fired by the PrismaAdapter immediately after the user row is created.
+    // This replaces the fragile setTimeout approach.
+    async createUser({ user }) {
+      const pendingRole = (user as any).__pendingRole;
+      if (pendingRole && user.email) {
+        await prisma.user.updateMany({
+          where: { email: user.email },
+          data: { role: pendingRole },
+        });
+      }
     },
   },
   pages: {

@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Brain, Pin, User } from "lucide-react";
+import { Search, Brain, Pin, User, AlertCircle } from "lucide-react";
 
 export default function SemanticSearchPage() {
   const [query, setQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data, loading } = useApi<any>(
+  const { data, loading, error } = useApi<any>(
     searchQuery ? `/api/memory/search?q=${encodeURIComponent(searchQuery)}&limit=20` : null,
     [searchQuery]
   );
@@ -36,6 +36,9 @@ export default function SemanticSearchPage() {
         </h1>
         <p className="text-muted-foreground">
           Search across approved memories using natural language. Results are ranked by meaning similarity.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Requires Ollama to be running locally with the <code>nomic-embed-text</code> model.
         </p>
       </div>
 
@@ -62,7 +65,19 @@ export default function SemanticSearchPage() {
         </div>
       )}
 
-      {!loading && searchQuery && results.length === 0 && (
+      {!loading && error && (
+        <div className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/20">
+          <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+          <p className="text-lg font-medium">Search unavailable</p>
+          <p className="text-sm">
+            {error.includes("Embedding") || error.includes("Ollama") || error.includes("embedding")
+              ? "Ollama is not running. Start Ollama on your host machine and ensure the nomic-embed-text model is downloaded."
+              : error}
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && searchQuery && results.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
           <p className="text-lg font-medium">No matching memories found</p>

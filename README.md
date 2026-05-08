@@ -83,8 +83,8 @@ Copy `.env.example` to `.env` and configure:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `AUTH_SECRET` | Random secret for session encryption |
-| `AUTH_URL` | Base URL of your app (e.g., `http://localhost:3000`) |
+| `NEXTAUTH_SECRET` | Random secret for session encryption |
+| `NEXTAUTH_URL` | Base URL of your app (e.g., `http://localhost:3000`) |
 | `SMTP_HOST` | SMTP server hostname |
 | `SMTP_PORT` | SMTP port (587 for TLS) |
 | `SMTP_USER` | SMTP username |

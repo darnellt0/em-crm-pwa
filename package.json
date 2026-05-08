@@ -11,10 +11,10 @@
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
-    "postinstall": "prisma generate",
-    "backup:db": "./scripts/backup.sh",
-    "restore:db": "./scripts/restore.sh",
-    "verify": "./scripts/verify.sh"
+    "backup:db": "bash scripts/backup.sh",
+    "restore:db": "bash scripts/restore.sh",
+    "verify": "bash scripts/verify.sh",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

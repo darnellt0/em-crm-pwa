@@ -29,7 +29,7 @@ cp .env.example .env.local
 
 Open `.env.local` and update the following:
 
-1. **`AUTH_SECRET`**: Generate a secure random string. You can run `openssl rand -base64 32` in your terminal and paste the result here.
+1. **`NEXTAUTH_SECRET`**: Generate a secure random string. You can run `openssl rand -base64 32` in your terminal and paste the result here.
 2. **`INTERNAL_SERVICE_TOKEN`**: Generate another random string for internal API calls (like the embedding worker).
 3. **`OLLAMA_URL`**: 
    - If Ollama is running on your host machine (Windows/Mac), use `http://host.docker.internal:11434`
@@ -75,6 +75,6 @@ The app will be available at http://localhost:3000.
 
 ## Troubleshooting
 
-- **Magic link fails or redirects to sign-in**: Ensure `AUTH_URL` in `.env.local` exactly matches the URL you are visiting (e.g., `http://localhost:3000`).
+- **Magic link fails or redirects to sign-in**: Ensure `NEXTAUTH_URL` in `.env.local` exactly matches the URL you are visiting (e.g., `http://localhost:3000`).
 - **Ollama connection refused**: Ensure Ollama is running and the `OLLAMA_URL` is correct for your environment. If using WSL, you may need to set `OLLAMA_HOST=0.0.0.0` in your Windows environment variables so WSL can reach it.
 - **Database connection errors**: Ensure Docker Desktop is running and the `em_postgres` container is healthy.

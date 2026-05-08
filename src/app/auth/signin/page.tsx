@@ -57,6 +57,18 @@ export default function SignInPage() {
                 We sent a sign-in link to <strong>{email}</strong>. Click the link in
                 your email to access the CRM.
               </p>
+              <p className="text-xs text-muted-foreground border rounded p-2 bg-muted/40 text-left">
+                <strong>Running locally?</strong> Open{" "}
+                <a
+                  href="http://localhost:8025"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-primary"
+                >
+                  MailHog (localhost:8025)
+                </a>{" "}
+                to find your magic link email.
+              </p>
               <Button
                 variant="outline"
                 onClick={() => {
