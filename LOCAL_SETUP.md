@@ -56,7 +56,7 @@ pnpm db:push
 pnpm db:seed
 ```
 
-*Note: The seed script ensures Darnell and Shria are created as `admin` users so you don't have to rely on the fragile first-login role assignment.*
+*Note: The seed script deterministically creates Darnell and Shria as `admin` users. Any other user who signs in for the first time will default to the `staff` role.*
 
 ## Step 5: Start the App
 
@@ -66,12 +66,33 @@ pnpm dev
 
 The app will be available at http://localhost:3000.
 
-## Step 6: Sign In
+## Step 6: Verify Setup
+
+Run the verification script to ensure all infrastructure, database, and app components are healthy:
+
+```bash
+pnpm verify
+```
+
+## Step 7: Sign In
 
 1. Go to http://localhost:3000
 2. Enter your email (e.g., `darnell@elevatedmovements.com` or `shria@elevatedmovements.com`)
 3. Open MailHog at http://localhost:8025
 4. Find the "Sign in to Elevated Movements CRM" email and click the magic link.
+
+## Backup and Restore
+
+To create a compressed backup of your local database:
+```bash
+pnpm backup:db
+```
+*Backups are saved to the `backups/` directory as `.sql.gz` files.*
+
+To restore a backup (this will overwrite your current database):
+```bash
+pnpm restore:db ./backups/em_crm_backup_YYYYMMDD_HHMMSS.sql.gz
+```
 
 ## Troubleshooting
 

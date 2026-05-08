@@ -1,124 +1,180 @@
 #!/bin/bash
-# Local acceptance verification script for Elevated Movements CRM
-# Run this after setup to confirm the app is working correctly.
+# EM CRM — Local Readiness Verification Script
+# Run after setup to confirm the CRM is correctly configured.
+# Usage: pnpm verify
+#
+# Exit codes:
+#   0 — all required checks passed
+#   1 — one or more required checks failed
 
-set -e
+set -uo pipefail
 
-# Load .env.local if available
-if [ -f .env.local ]; then
-  export $(grep -v '^#' .env.local | xargs)
+# ── Load env ──────────────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ -f "$PROJECT_DIR/.env.local" ]; then
+  # Export non-comment, non-empty lines from .env.local
+  set -a
+  # shellcheck disable=SC1090
+  source <(grep -v '^\s*#' "$PROJECT_DIR/.env.local" | grep -v '^\s*$')
+  set +a
 fi
 
-BASE_URL="${AUTH_URL:-http://localhost:3000}"
+BASE_URL="${NEXTAUTH_URL:-http://localhost:3000}"
 DB_CONTAINER="em_postgres"
 DB_USER="em_app"
 DB_NAME="em_crm"
 PASS=0
 FAIL=0
 
-pass() { echo "  ✅ $1"; PASS=$((PASS+1)); }
-fail() { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
+pass() { echo "  ✅ $1"; PASS=$((PASS + 1)); }
+fail() { echo "  ❌ $1"; FAIL=$((FAIL + 1)); }
+warn() { echo "  ⚠️  $1"; }
 
 echo ""
 echo "============================================"
-echo "  Elevated Movements CRM — Acceptance Check"
+echo "  Elevated Movements CRM — Readiness Check"
 echo "============================================"
 echo ""
 
-# 1. Docker running
+# ── 1. Infrastructure ─────────────────────────────────────────────────────────
+
 echo "[ Infrastructure ]"
+
 if docker info > /dev/null 2>&1; then
   pass "Docker is running"
 else
-  fail "Docker is not running"
+  fail "Docker is not running — start Docker Desktop first"
 fi
 
-# 2. Database container running
-if docker ps | grep -q "$DB_CONTAINER"; then
-  pass "Database container ($DB_CONTAINER) is running"
+if docker ps --format "{{.Names}}" | grep -q "^${DB_CONTAINER}$"; then
+  pass "Database container (${DB_CONTAINER}) is running"
 else
-  fail "Database container ($DB_CONTAINER) is not running"
+  fail "Database container (${DB_CONTAINER}) is not running — run: docker compose up -d"
 fi
 
-# 3. Database connects and migrations applied
+# ── 2. Database ───────────────────────────────────────────────────────────────
+
 echo ""
 echo "[ Database ]"
+
 if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1; then
   pass "Database connection successful"
 else
-  fail "Cannot connect to database"
+  fail "Cannot connect to database — run: docker compose up -d && pnpm db:push"
 fi
 
-# 4. pgvector extension exists
-if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT extname FROM pg_extension WHERE extname='vector'" | grep -q "vector"; then
+VECTOR_CHECK=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+  "SELECT COUNT(*) FROM pg_extension WHERE extname='vector'" 2>/dev/null || echo "0")
+if [ "${VECTOR_CHECK:-0}" -ge 1 ] 2>/dev/null; then
   pass "pgvector extension is installed"
 else
   fail "pgvector extension is missing — run: pnpm db:push"
 fi
 
-# 5. User table exists and has rows (seed ran)
-USER_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM \"User\"" 2>/dev/null | tr -d ' ')
-if [ "$USER_COUNT" -ge 1 ] 2>/dev/null; then
-  pass "User table has $USER_COUNT user(s) — seed ran"
+USER_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+  "SELECT COUNT(*) FROM \"User\"" 2>/dev/null | tr -d '[:space:]' || echo "0")
+if [ "${USER_COUNT:-0}" -ge 1 ] 2>/dev/null; then
+  pass "Seed users exist (${USER_COUNT} user(s) in database)"
 else
-  fail "User table is empty — run: pnpm db:seed"
+  fail "No users found — run: pnpm db:seed"
 fi
 
-# 6. App is running
+# Verify seed users specifically have admin role
+ADMIN_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+  "SELECT COUNT(*) FROM \"User\" WHERE role='admin'" 2>/dev/null | tr -d '[:space:]' || echo "0")
+if [ "${ADMIN_COUNT:-0}" -ge 1 ] 2>/dev/null; then
+  pass "At least one admin user exists (${ADMIN_COUNT} admin(s))"
+else
+  fail "No admin users found — run: pnpm db:seed"
+fi
+
+# ── 3. Prisma client ──────────────────────────────────────────────────────────
+
+echo ""
+echo "[ Node / Prisma ]"
+
+cd "$PROJECT_DIR"
+
+if [ -d "node_modules/.prisma/client" ]; then
+  pass "Prisma client is generated (node_modules/.prisma/client exists)"
+else
+  fail "Prisma client not generated — run: pnpm install (postinstall runs prisma generate)"
+fi
+
+# ── 4. TypeScript typecheck ───────────────────────────────────────────────────
+
+echo "  ⏳ Running TypeScript typecheck (this may take ~15s)..."
+if npx tsc --noEmit > /tmp/em_crm_tsc.log 2>&1; then
+  pass "TypeScript typecheck passed"
+else
+  fail "TypeScript errors found — see /tmp/em_crm_tsc.log for details"
+fi
+
+# ── 5. Application ────────────────────────────────────────────────────────────
+
 echo ""
 echo "[ Application ]"
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/auth/signin" 2>/dev/null || echo "000")
+
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/auth/signin" 2>/dev/null || echo "000")
 if [ "$HTTP_STATUS" = "200" ]; then
-  pass "App is running at $BASE_URL"
+  pass "App is running at ${BASE_URL}"
 else
-  fail "App is not responding at $BASE_URL (HTTP $HTTP_STATUS) — run: pnpm dev"
+  fail "App is not responding at ${BASE_URL} (HTTP ${HTTP_STATUS}) — run: pnpm dev"
 fi
 
-# 7. Dashboard API responds
-DASHBOARD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/dashboard" 2>/dev/null || echo "000")
-if [ "$DASHBOARD_STATUS" = "401" ] || [ "$DASHBOARD_STATUS" = "200" ]; then
-  pass "Dashboard API is reachable (HTTP $DASHBOARD_STATUS)"
-else
-  fail "Dashboard API is not responding (HTTP $DASHBOARD_STATUS)"
-fi
-
-# 8. Contacts API responds
-CONTACTS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/contacts" 2>/dev/null || echo "000")
-if [ "$CONTACTS_STATUS" = "401" ] || [ "$CONTACTS_STATUS" = "200" ]; then
-  pass "Contacts API is reachable (HTTP $CONTACTS_STATUS)"
-else
-  fail "Contacts API is not responding (HTTP $CONTACTS_STATUS)"
-fi
-
-# 9. Auth config loads (sign-in page renders)
-SIGNIN_BODY=$(curl -s "$BASE_URL/auth/signin" 2>/dev/null || echo "")
+SIGNIN_BODY=$(curl -s "${BASE_URL}/auth/signin" 2>/dev/null || echo "")
 if echo "$SIGNIN_BODY" | grep -q "Elevated Movements"; then
   pass "Sign-in page renders correctly"
 else
-  fail "Sign-in page does not render correctly"
+  fail "Sign-in page does not contain expected content"
 fi
 
-# 10. Ollama (optional)
+# Protected APIs must return 401 (not 200) when unauthenticated
+DASHBOARD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/dashboard" 2>/dev/null || echo "000")
+if [ "$DASHBOARD_STATUS" = "401" ]; then
+  pass "Dashboard API is auth-protected (returns 401 without session)"
+else
+  fail "Dashboard API returned HTTP ${DASHBOARD_STATUS} — expected 401 (unauthenticated)"
+fi
+
+CONTACTS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/contacts" 2>/dev/null || echo "000")
+if [ "$CONTACTS_STATUS" = "401" ]; then
+  pass "Contacts API is auth-protected (returns 401 without session)"
+else
+  fail "Contacts API returned HTTP ${CONTACTS_STATUS} — expected 401 (unauthenticated)"
+fi
+
+# ── 6. Ollama (optional, non-fatal) ──────────────────────────────────────────
+
 echo ""
 echo "[ AI / Ollama (optional) ]"
-OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
-OLLAMA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$OLLAMA_URL/api/tags" 2>/dev/null || echo "000")
+
+OLLAMA_BASE="${OLLAMA_URL:-http://127.0.0.1:11434}"
+OLLAMA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${OLLAMA_BASE}/api/tags" 2>/dev/null || echo "000")
 if [ "$OLLAMA_STATUS" = "200" ]; then
-  pass "Ollama is running at $OLLAMA_URL"
+  pass "Ollama is running at ${OLLAMA_BASE}"
 else
-  echo "  ⚠️  Ollama is not running (HTTP $OLLAMA_STATUS) — AI memory extraction will be skipped"
+  warn "Ollama is not running (${OLLAMA_BASE} → HTTP ${OLLAMA_STATUS})"
+  echo "       AI memory extraction and semantic search will not work until Ollama is started."
+  echo "       This is non-fatal — the rest of the CRM works without it."
 fi
+
+# ── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""
 echo "============================================"
-echo "  Results: $PASS passed, $FAIL failed"
+echo "  Results: ${PASS} passed, ${FAIL} failed"
 echo "============================================"
 echo ""
 
 if [ "$FAIL" -gt 0 ]; then
-  echo "  Some checks failed. See LOCAL_SETUP.md for troubleshooting."
+  echo "  ⚠️  Some checks failed. See LOCAL_SETUP.md for troubleshooting."
   exit 1
 else
-  echo "  All checks passed! The CRM is ready for use."
+  echo "  🎉 All checks passed! The CRM is ready for use."
+  echo "     Sign in at: ${BASE_URL}"
   exit 0
 fi

@@ -45,27 +45,27 @@ git clone https://github.com/darnellt0/em-crm-pwa.git
 cd em-crm-pwa
 
 # 2. Copy environment variables
-cp .env.example .env
-# Edit .env with your SMTP credentials and secrets
+cp .env.example .env.local
+# Edit .env.local with your SMTP credentials and secrets
 
-# 3. Start infrastructure (PostgreSQL + Ollama + MailHog + n8n)
+# 3. Start infrastructure (PostgreSQL + MailHog + n8n)
 docker compose up -d
 
-# 4. Pull Ollama models
-docker exec ollama ollama pull qwen2.5:7b-instruct
-docker exec ollama ollama pull nomic-embed-text
-
-# 5. Install dependencies
+# 4. Install dependencies
 pnpm install
 
-# 6. Run database migrations
-pnpm db:migrate
+# 5. Run database migrations and seed users
+pnpm db:push
+pnpm db:seed
+
+# 6. Verify setup
+pnpm verify
 
 # 7. Start development server
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and sign in with your email.
+Open [http://localhost:3000](http://localhost:3000) and sign in with your email. For local development, check MailHog at [http://localhost:8025](http://localhost:8025) for your magic link.
 
 ### Service URLs
 
@@ -74,96 +74,52 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with your email.
 | CRM App | [http://localhost:3000](http://localhost:3000) | Main application |
 | MailHog | [http://localhost:8025](http://localhost:8025) | Email testing UI (catches all outbound emails in dev) |
 | n8n | [http://localhost:5678](http://localhost:5678) | Workflow automation builder |
-| Ollama | [http://localhost:11434](http://localhost:11434) | AI/LLM API |
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env.local` and configure:
 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `NEXTAUTH_SECRET` | Random secret for session encryption |
 | `NEXTAUTH_URL` | Base URL of your app (e.g., `http://localhost:3000`) |
-| `SMTP_HOST` | SMTP server hostname |
-| `SMTP_PORT` | SMTP port (587 for TLS) |
-| `SMTP_USER` | SMTP username |
-| `SMTP_PASS` | SMTP password |
+| `SMTP_HOST` | SMTP server hostname (use `localhost` for local dev with MailHog) |
+| `SMTP_PORT` | SMTP port (1025 for MailHog) |
 | `EMAIL_FROM` | Sender email address |
-| `OLLAMA_BASE_URL` | Ollama API URL (default: `http://localhost:11434`) |
+| `OLLAMA_URL` | Ollama API URL (default: `http://127.0.0.1:11434`) |
 | `INTERNAL_SERVICE_TOKEN` | Token for internal API calls (embedding worker) |
-| `ADMIN_EMAILS` | Comma-separated admin email addresses |
 
-## Project Structure
+## Role Hierarchy
 
-```
-src/
-├── app/
-│   ├── (dashboard)/          # Dashboard pages (with sidebar layout)
-│   │   ├── page.tsx          # Dashboard home
-│   │   ├── contacts/         # Contacts list + detail
-│   │   ├── tasks/            # Task management
-│   │   ├── pipeline/         # Opportunities Kanban
-│   │   ├── memory-inbox/     # AI memory review
-│   │   ├── search/           # Semantic search
-│   │   ├── programs/         # Programs management
-│   │   ├── imports/          # CSV import
-│   │   └── settings/         # User management + roles
-│   ├── api/                  # API routes
-│   │   ├── auth/             # NextAuth routes
-│   │   ├── contacts/         # Contacts CRUD + bulk
-│   │   ├── interactions/     # Interaction logging
-│   │   ├── tasks/            # Task CRUD
-│   │   ├── opportunities/    # Pipeline CRUD
-│   │   ├── memory/           # Memory queue, bulk, search
-│   │   ├── embeddings/       # Embedding worker
-│   │   ├── programs/         # Programs CRUD
-│   │   ├── imports/          # CSV import pipeline (upload/map/validate/run/rows)
-│   │   ├── views/            # Saved Views CRUD
-│   │   ├── users/            # User management
-│   │   └── dashboard/        # Dashboard stats
-│   └── auth/signin/          # Magic link sign-in page
-├── components/
-│   ├── crm/                  # CRM-specific components
-│   └── ui/                   # shadcn/ui components
-├── hooks/                    # Custom React hooks
-├── lib/
-│   ├── ai/                   # Ollama integration
-│   ├── auth/                 # Auth helpers + role guards
-│   ├── db/                   # Prisma client
-│   ├── phone/                # Phone normalization
-│   └── validations/          # Zod schemas
-└── types/                    # TypeScript declarations
-prisma/
-├── schema.prisma             # Database schema
-└── migrations/               # pgvector setup
-```
+| Role | Permissions |
+|------|------------|
+| `admin` | Full access, user management, settings |
+| `partner_admin` | Manage contacts, tasks, programs (no user management) |
+| `staff` | View/edit contacts, log interactions, manage tasks |
+| `read_only` | View-only access |
 
-## Saved Views
+**Role Assignment:**
+- Darnell and Shria are deterministically created as `admin` users via the `pnpm db:seed` script.
+- Any other user who signs in for the first time will default to the `staff` role.
 
-Saved Views let you persist filtered and sorted contact list configurations. From the Contacts page:
+## Backup and Restore
 
-1. Apply filters (stage, search, tags) and sorting
-2. Click **Save View** to name and save the current configuration
-3. Toggle **Shared** to make the view available to all team members
-4. Switch between saved views using the dropdown in the page header
+- **Backup:** `pnpm backup:db` (saves a compressed `.sql.gz` to the `backups/` folder)
+- **Restore:** `pnpm restore:db ./backups/em_crm_backup_YYYYMMDD_HHMMSS.sql.gz`
 
-API endpoints: `GET/POST /api/views`, `GET/PATCH/DELETE /api/views/[id]`
+## AI Features (Ollama)
 
-## CSV Import Wizard
+The CRM uses Ollama for AI memory extraction and semantic search. This is **optional** — the CRM will function normally without it, but AI features will be disabled.
 
-The import follows a 5-step staged workflow:
-
-1. **Upload** — Drag-and-drop or browse for a CSV file
-2. **Map Columns** — Auto-mapped columns with manual override (CSV column → CRM field)
-3. **Validate** — Dry-run deduplication preview showing per-row actions:
-   - **Will Create** — No matching contact found by email or phone
-   - **Will Update** — Existing contact matched (tags are merged, not overwritten)
-   - **Will Skip** — Row has insufficient identifying data
-4. **Run** — Execute the import with the previewed actions
-5. **Done** — Summary with created/updated/skipped/errored counts
-
-API endpoints: `POST /api/imports` → `/upload` → `/map` → `/validate` → `/run`, `GET /rows`
+If you want to use AI features:
+1. Install Ollama on your host machine.
+2. Pull the required models:
+   ```bash
+   ollama pull qwen2.5:7b-instruct
+   ollama pull nomic-embed-text
+   ```
+3. Ensure `OLLAMA_URL` in `.env.local` points to your Ollama instance.
 
 ## Embedding Worker
 
@@ -177,26 +133,27 @@ curl -X POST http://localhost:3000/api/embeddings/run \
 
 This can be scheduled via cron, n8n workflow, or triggered after memory approval.
 
-## n8n Workflow Automation
+## Saved Views
 
-n8n is included in the Docker Compose stack for building custom automation workflows. Access it at [http://localhost:5678](http://localhost:5678).
+Saved Views let you persist filtered and sorted contact list configurations. From the Contacts page:
 
-Example use cases:
-- Schedule the embedding worker to run every hour
-- Send Slack/email notifications when new contacts are imported
-- Trigger memory extraction on a schedule for batch-processed interactions
-- Sync contacts with external CRMs or marketing tools
+1. Apply filters (stage, search, tags) and sorting
+2. Click **Save View** to name and save the current configuration
+3. Toggle **Shared** to make the view available to all team members
+4. Switch between saved views using the dropdown in the page header
 
-## Role Hierarchy
+## CSV Import Wizard
 
-| Role | Permissions |
-|------|------------|
-| `admin` | Full access, user management, settings |
-| `partner_admin` | Manage contacts, tasks, programs (no user management) |
-| `staff` | View/edit contacts, log interactions, manage tasks |
-| `read_only` | View-only access |
+The import follows a 5-step staged workflow:
 
-The first user whose email matches `ADMIN_EMAILS` is automatically assigned the `admin` role.
+1. **Upload** — Drag-and-drop or browse for a CSV file
+2. **Map Columns** — Auto-mapped columns with manual override (CSV column → CRM field)
+3. **Validate** — Dry-run deduplication preview showing per-row actions:
+   - **Will Create** — No matching contact found by email or phone
+   - **Will Update** — Existing contact matched (tags are merged, not overwritten)
+   - **Will Skip** — Row has insufficient identifying data
+4. **Run** — Execute the import with the previewed actions
+5. **Done** — Summary with created/updated/skipped/errored counts
 
 ---
 
