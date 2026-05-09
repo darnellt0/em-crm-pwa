@@ -15,17 +15,17 @@ export const authOptions: NextAuthOptions = {
         auth: undefined, // MailHog doesn't require auth
       },
       from: process.env.EMAIL_FROM || "Elevated Movements <no-reply@localhost>",
-      sendVerificationRequest: async ({ identifier: email, url, provider }) => {
+      sendVerificationRequest: async ({ identifier: email, url }) => {
         const transport = nodemailer.createTransport({
-          host: provider.server.host as string,
-          port: provider.server.port as number,
+          host: process.env.SMTP_HOST || "localhost",
+          port: Number(process.env.SMTP_PORT) || 1025,
           secure: false,
           tls: { rejectUnauthorized: false },
         });
 
         await transport.sendMail({
           to: email,
-          from: provider.from,
+          from: process.env.EMAIL_FROM || "Elevated Movements <no-reply@localhost>",
           subject: "Sign in to Elevated Movements CRM",
           text: `Sign in to EM CRM:\n\n${url}\n\n`,
           html: `

@@ -98,10 +98,12 @@ echo "[ Node / Prisma ]"
 
 cd "$PROJECT_DIR"
 
-if [ -d "node_modules/.prisma/client" ]; then
-  pass "Prisma client is generated (node_modules/.prisma/client exists)"
+# pnpm stores the generated client under .pnpm; check both locations
+if [ -d "node_modules/.prisma/client" ] || \
+   find node_modules/.pnpm -name "libquery_engine*" -path "*prisma/client*" -maxdepth 6 2>/dev/null | grep -q .; then
+  pass "Prisma client is generated"
 else
-  fail "Prisma client not generated — run: pnpm install (postinstall runs prisma generate)"
+  fail "Prisma client not generated — run: pnpm exec prisma generate"
 fi
 
 # ── 4. TypeScript typecheck ───────────────────────────────────────────────────

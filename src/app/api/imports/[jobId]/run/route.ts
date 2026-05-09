@@ -104,7 +104,7 @@ export async function POST(
             select: { tags: true },
           });
           const existingTags = (existing?.tags as string[]) || [];
-          const mergedTags = [...new Set([...existingTags, ...contactData.tags])];
+          const mergedTags = Array.from(new Set([...existingTags, ...contactData.tags]));
 
           await prisma.contact.update({
             where: { id: existingContact.id },
