@@ -67,6 +67,8 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) and sign in with your email.
 
+For Day 1 operating instructions, local backup, and import verification, see `docs/day-1-runbook.md`.
+
 ### Service URLs
 
 | Service | URL | Description |
