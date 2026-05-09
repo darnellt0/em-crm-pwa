@@ -52,6 +52,7 @@ export interface CrmContactRow {
   lastContactedAt?: string; // ISO date string
   canonicalId?: string;
   reviewStatus?: string;    // Needs Review | Ready | etc.
+  metadataJson?: string;    // raw JSON string from cleaned master
 }
 
 export interface CrmImportRowResult {

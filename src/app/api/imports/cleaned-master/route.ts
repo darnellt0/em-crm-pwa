@@ -134,10 +134,12 @@ export async function POST(request: NextRequest) {
     if (!dryRun) {
       const job = await prisma.importJob.create({
         data: {
-          fileName: "cleaned-master-import.csv",
+          createdByUserId: authResult.userId,
+          entity: "contacts",
+          filename: "cleaned-master-import.csv",
           status: "processing",
-          totalRows: rows.length,
-          source: "cleaned-master",
+          mapping: { source: "cleaned-master" },
+          stats: { totalRows: rows.length },
         },
       });
       importJobId = job.id;
