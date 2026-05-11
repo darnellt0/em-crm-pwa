@@ -127,11 +127,22 @@ To generate embeddings for approved memories, call the internal endpoint:
 
 ```bash
 curl -X POST http://localhost:3000/api/embeddings/run \
-  -H "Authorization: Bearer YOUR_INTERNAL_SERVICE_TOKEN" \
+  -H "x-internal-token: YOUR_INTERNAL_SERVICE_TOKEN" \
   -H "Content-Type: application/json"
 ```
 
 This can be scheduled via cron, n8n workflow, or triggered after memory approval.
+
+## Internal Ops Summary For Nia
+
+Nia can read a limited operational CRM summary through the internal endpoint:
+
+```bash
+curl http://localhost:3000/api/internal/ops-summary \
+  -H "x-internal-token: YOUR_INTERNAL_SERVICE_TOKEN"
+```
+
+This endpoint is read-only and returns aggregate CRM health, pipeline, task, follow-up, and memory-review counts plus short focus lists. It does not expose full CRM notes or memory bodies.
 
 ## Saved Views
 
