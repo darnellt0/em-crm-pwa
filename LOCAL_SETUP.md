@@ -47,6 +47,8 @@ Verify everything is running:
 - MailHog UI: http://localhost:8025
 - n8n UI: http://localhost:5678
 
+*Note: n8n is optional — the CRM does not depend on it. If you don't need workflow automation yet, you can start just the required services with `docker compose up -d postgres mailhog`.*
+
 ## Step 4: Database Setup & Seeding
 
 Push the schema to the database and seed the initial users (Darnell and Shria):
@@ -80,6 +82,26 @@ pnpm verify
 2. Enter your email (e.g., `darnell@elevatedmovements.com` or `shria@elevatedmovements.com`)
 3. Open MailHog at http://localhost:8025
 4. Find the "Sign in to Elevated Movements CRM" email and click the magic link.
+
+## Sharing One Instance Between Two People
+
+The CRM runs on a single host machine and shares one database. For a second person (e.g. Shria) to use the same instance from another computer:
+
+1. **Connect both machines to the same network.** The simplest safe option is [Tailscale](https://tailscale.com) (free for personal use) — install it on both machines and note the host machine's Tailscale name or IP (e.g. `main-pc.tailnet-name.ts.net` or `100.x.y.z`). Being on the same home/office Wi-Fi also works; use the host's LAN IP.
+2. **Point `NEXTAUTH_URL` at the shared address.** In `.env.local` on the host, set:
+   ```
+   NEXTAUTH_URL="http://<host-address>:3000"
+   ```
+   Then restart the app. Magic sign-in links are generated from this URL, so **both people must open the CRM at this address** (including on the host machine — not `localhost`).
+3. **Sign-in emails land in MailHog on the host.** The second person opens `http://<host-address>:8025`, finds their "Sign in to Elevated Movements CRM" email, and clicks the link.
+4. **Do not port-forward these ports to the public internet.** The app runs over plain HTTP with a dev mail catcher; keep access limited to your LAN or tailnet.
+
+For daily use, run the host in production mode (faster than the dev server):
+
+```bash
+pnpm build
+pnpm start
+```
 
 ## Backup and Restore
 
