@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-export function useApi<T>(url: string | null, deps: any[] = []) {
+export function useApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(!!url);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export function useApi<T>(url: string | null, deps: any[] = []) {
 
   useEffect(() => {
     refetch();
-  }, [refetch, ...deps]);
+  }, [refetch]);
 
   return { data, loading, error, refetch };
 }

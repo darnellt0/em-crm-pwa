@@ -26,14 +26,17 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except:
-     * - api/auth (NextAuth routes)
-     * - auth (sign-in page)
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     * - public files
+     * Apply NextAuth middleware only to dashboard pages — NOT to API routes.
+     * API routes handle their own auth via requireRole() + handleAuthError()
+     * and must return 401/403 JSON responses. If the middleware intercepts them
+     * it returns a 307 redirect to sign-in instead of a machine-readable error.
+     *
+     * Excluded from middleware:
+     * - /api/*         (all API routes — handle auth themselves)
+     * - /auth/*        (sign-in / verify pages)
+     * - /_next/*       (Next.js internals)
+     * - static assets  (favicon, manifest, icons, sw.js)
      */
-    "/((?!api/auth|auth|_next/static|_next/image|favicon.ico|manifest.json|icons|sw.js).*)",
+    "/((?!api|auth|_next/static|_next/image|favicon.ico|manifest.json|icons|sw.js).*)",
   ],
 };

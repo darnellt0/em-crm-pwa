@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const UpdateProgramSchema = z.object({
@@ -10,10 +10,10 @@ const UpdateProgramSchema = z.object({
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = UpdateProgramSchema.safeParse(body);
     if (!parsed.success) {
@@ -21,7 +21,7 @@ export async function PATCH(
     }
 
     const program = await prisma.program.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: parsed.data,
     });
 
@@ -33,12 +33,12 @@ export async function PATCH(
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const program = await prisma.program.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
       include: {
         enrollments: {
           include: {

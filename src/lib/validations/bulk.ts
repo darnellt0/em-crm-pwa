@@ -9,6 +9,7 @@ export const ContactBulkActionSchema = z.object({
     "remove_tags",
     "set_follow_up",
     "create_task",
+    "delete",
   ]),
   ownerUserId: z.string().uuid().optional(),
   lifecycleStage: z.string().optional(),

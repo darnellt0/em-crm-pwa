@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 
 /**
  * GET /api/imports/[jobId]/rows
@@ -10,15 +10,15 @@ import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
 
     const statusFilter = req.nextUrl.searchParams.get("status");
 
     const job = await prisma.importJob.findUnique({
-      where: { id: params.jobId },
+      where: { id: (await params).jobId },
       select: { id: true, status: true, filename: true, stats: true },
     });
 
@@ -26,7 +26,7 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Import job not found" }, { status: 404 });
     }
 
-    const where: any = { jobId: params.jobId };
+    const where: any = { jobId: (await params).jobId };
     if (statusFilter) where.status = statusFilter;
 
     const rows = await prisma.importRow.findMany({

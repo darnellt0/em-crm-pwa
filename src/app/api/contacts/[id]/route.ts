@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { UpdateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const contact = await prisma.contact.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
       include: {
         owner: { select: { id: true, name: true, email: true } },
         organization: { select: { id: true, name: true } },
@@ -26,7 +26,7 @@ export async function GET(
             tasks: true,
             opportunities: true,
             enrollments: true,
-            memories: true,
+            memories: { where: { status: "approved" } },
           },
         },
       },
@@ -42,12 +42,25 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
+    await prisma.contact.delete({ where: { id: (await params).id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = UpdateContactSchema.safeParse(body);
     if (!parsed.success) {
@@ -66,7 +79,7 @@ export async function PATCH(
     }
 
     const contact = await prisma.contact.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: updateData,
     });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const CreateOpportunitySchema = z.object({
@@ -13,7 +13,7 @@ const CreateOpportunitySchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const stage = req.nextUrl.searchParams.get("stage");
     const contactId = req.nextUrl.searchParams.get("contactId");
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateOpportunitySchema.safeParse(body);
     if (!parsed.success) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { signIn, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,9 +11,18 @@ import { toast } from "sonner";
 import { Mail, Loader2 } from "lucide-react";
 
 export default function SignInPage() {
+  const mailPreviewUrl = process.env.NEXT_PUBLIC_MAIL_PREVIEW_URL;
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const { status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/");
+    }
+  }, [status, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +32,7 @@ export default function SignInPage() {
       const result = await signIn("email", {
         email,
         redirect: false,
+        callbackUrl: "/",
       });
       if (result?.error) {
         toast.error("Failed to send magic link. Check your email address.");
@@ -57,6 +68,20 @@ export default function SignInPage() {
                 We sent a sign-in link to <strong>{email}</strong>. Click the link in
                 your email to access the CRM.
               </p>
+              {mailPreviewUrl && (
+                <p className="text-xs text-muted-foreground border rounded p-2 bg-muted/40 text-left">
+                  <strong>Local testing:</strong> Open{" "}
+                  <a
+                    href={mailPreviewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-primary"
+                  >
+                    the development mailbox
+                  </a>{" "}
+                  to find your magic link email.
+                </p>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {

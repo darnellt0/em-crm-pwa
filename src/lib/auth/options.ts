@@ -4,28 +4,57 @@ import type { Adapter } from "next-auth/adapters";
 import EmailProvider from "next-auth/providers/email";
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/db/prisma";
+import {
+  getConfiguredRole,
+  isEmailAllowed,
+  normalizeEmail,
+} from "@/lib/auth/accessPolicy";
+
+const smtpPort = Number(process.env.SMTP_PORT) || 1025;
+const smtpUser = process.env.SMTP_USER?.trim();
+const smtpPassword = process.env.SMTP_PASSWORD;
+const smtpServer = {
+  host: process.env.SMTP_HOST || "127.0.0.1",
+  port: smtpPort,
+  secure: process.env.SMTP_SECURE === "true" || smtpPort === 465,
+  auth:
+    smtpUser && smtpPassword
+      ? { user: smtpUser, pass: smtpPassword }
+      : undefined,
+};
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as Adapter,
   providers: [
     EmailProvider({
-      server: {
-        host: process.env.SMTP_HOST || "localhost",
-        port: Number(process.env.SMTP_PORT) || 1025,
-        auth: undefined, // MailHog doesn't require auth
-      },
+      server: smtpServer,
       from: process.env.EMAIL_FROM || "Elevated Movements <no-reply@localhost>",
       sendVerificationRequest: async ({ identifier: email, url, provider }) => {
+        if (!isEmailAllowed(email)) {
+          throw new Error("EMAIL_NOT_ALLOWED");
+        }
+
+        const server = (
+          typeof provider.server === "string"
+            ? {
+                host: process.env.SMTP_HOST || "127.0.0.1",
+                port: smtpPort,
+                secure: smtpServer.secure,
+                auth: smtpServer.auth,
+              }
+            : provider.server
+        ) as typeof smtpServer;
+
         const transport = nodemailer.createTransport({
-          host: provider.server.host as string,
-          port: provider.server.port as number,
-          secure: false,
-          tls: { rejectUnauthorized: false },
+          host: server.host,
+          port: server.port,
+          secure: server.secure,
+          auth: server.auth,
         });
 
         await transport.sendMail({
           to: email,
-          from: provider.from,
+          from: process.env.EMAIL_FROM || "Elevated Movements <no-reply@localhost>",
           subject: "Sign in to Elevated Movements CRM",
           text: `Sign in to EM CRM:\n\n${url}\n\n`,
           html: `
@@ -45,57 +74,52 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: {
-    strategy: "database",
+    strategy: "jwt",
   },
   callbacks: {
-    async session({ session, user }) {
-      if (session.user) {
-        (session.user as any).id = user.id;
-        // Fetch role from DB
-        const dbUser = await prisma.user.findUnique({
+    async signIn({ user }) {
+      if (!user.email || !isEmailAllowed(user.email)) return false;
+
+      if (user.id) {
+        await prisma.user.update({
           where: { id: user.id },
+          data: {
+            email: normalizeEmail(user.email),
+          },
+        });
+      }
+      return true;
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        (session.user as any).id = token.sub;
+        // Always read role from DB so any role change takes effect immediately.
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
           select: { role: true },
         });
         (session.user as any).role = dbUser?.role || "staff";
       }
       return session;
     },
-    async signIn({ user }) {
-      // Multi-user Day 1 role assignment
-      if (user.email) {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email },
-          select: { id: true, role: true },
+  },
+  events: {
+    async createUser({ user }) {
+      if (user.id && user.email) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: normalizeEmail(user.email),
+            role: getConfiguredRole(user.email),
+          },
         });
-
-        if (!existingUser) {
-          // New user — check how many users exist
-          const userCount = await prisma.user.count();
-          let assignRole: "admin" | "partner_admin" | "staff" = "staff";
-
-          if (userCount === 0) {
-            // First user ever → admin
-            assignRole = "admin";
-          } else if (userCount === 1) {
-            // Second distinct user → partner_admin
-            assignRole = "partner_admin";
-          }
-
-          // The adapter will create the user; we update role after creation
-          // We use a setTimeout trick since the adapter creates the user in the same transaction
-          setTimeout(async () => {
-            try {
-              await prisma.user.updateMany({
-                where: { email: user.email! },
-                data: { role: assignRole },
-              });
-            } catch (e) {
-              console.error("Failed to assign role:", e);
-            }
-          }, 500);
-        }
       }
-      return true;
     },
   },
   pages: {

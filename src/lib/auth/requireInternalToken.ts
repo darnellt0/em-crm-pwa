@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 export function requireInternalToken(req: NextRequest): Response | null {
   const token = req.headers.get("x-internal-token");
-  const expected = process.env.INTERNAL_SERVICE_TOKEN;
+  const expected = process.env.INTERNAL_SERVICE_TOKEN?.trim();
 
   if (!expected) {
     return new Response(

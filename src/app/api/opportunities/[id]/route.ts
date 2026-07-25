@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const UpdateOpportunitySchema = z.object({
@@ -12,10 +12,10 @@ const UpdateOpportunitySchema = z.object({
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = UpdateOpportunitySchema.safeParse(body);
     if (!parsed.success) {
@@ -29,7 +29,7 @@ export async function PATCH(
     }
 
     const opportunity = await prisma.opportunity.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: updateData,
     });
 

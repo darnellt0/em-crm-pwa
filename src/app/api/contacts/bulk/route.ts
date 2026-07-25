@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { ContactBulkActionSchema } from "@/lib/validations/bulk";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("staff");
     const parsed = ContactBulkActionSchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
     }
 
     const { ids, action } = parsed.data;
+    if (action === "delete") {
+      await requireRole("partner_admin");
+    }
     const errors: any[] = [];
     let updatedCount = 0;
 
@@ -58,6 +61,12 @@ export async function POST(req: NextRequest) {
           where: { id: { in: ids } },
           data: { nextFollowUpAt: followUp },
         });
+        updatedCount = res.count;
+        return;
+      }
+
+      if (action === "delete") {
+        const res = await tx.contact.deleteMany({ where: { id: { in: ids } } });
         updatedCount = res.count;
         return;
       }
