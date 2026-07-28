@@ -26,12 +26,13 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
-  ownedContacts       Contact[]      @relation("ContactOwner")
-  ownedTasks          Task[]         @relation("TaskOwner")
-  createdInteractions Interaction[]  @relation("InteractionCreator")
-  reviewedMemories    AiMemoryItem[] @relation("MemoryReviewer")
-  savedViews          SavedView[]
-  importJobs          ImportJob[]
+  ownedContacts        Contact[]            @relation("ContactOwner")
+  ownedTasks           Task[]               @relation("TaskOwner")
+  createdInteractions  Interaction[]        @relation("InteractionCreator")
+  reviewedMemories     AiMemoryItem[]       @relation("MemoryReviewer")
+  savedViews           SavedView[]
+  importJobs           ImportJob[]
+  reviewedAgentActions AgentActionRequest[] @relation("AgentActionReviewer")
 }
 
 model Account {
@@ -69,30 +70,32 @@ model VerificationToken {
 }
 
 model Contact {
-  id              String    @id @default(uuid())
+  id              String        @id @default(uuid())
   firstName       String?
   lastName        String?
-  email           String?   @unique
+  email           String?       @unique
   phone           String?
-  phoneNormalized String?   @unique
+  phoneNormalized String?       @unique
   persona         String?
   source          String?
-  lifecycleStage  String    @default("lead")
-  leadScore       Int       @default(0)
-  tags            String[]  @default([])
+  lifecycleStage  String        @default("lead")
+  leadScore       Int           @default(0)
+  tags            String[]      @default([])
   lastTouchAt     DateTime?
   nextFollowUpAt  DateTime?
   ownerUserId     String?
-  owner           User?     @relation("ContactOwner", fields: [ownerUserId], references: [id])
+  owner           User?         @relation("ContactOwner", fields: [ownerUserId], references: [id])
   organizationId  String?
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
   interactions  Interaction[]
   opportunities Opportunity[]
+  invoices      Invoice[]
   enrollments   Enrollment[]
   tasks         Task[]
   memories      AiMemoryItem[]
   importRows    ImportRow[]
+  agentActions  AgentActionRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -121,6 +124,45 @@ model Opportunity {
   stage     String
   closeDate DateTime?
   createdAt DateTime  @default(now())
+}
+
+model Invoice {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  amount    Decimal  @db.Decimal(12, 2)
+  status    String
+  issueDate DateTime
+  dueDate   DateTime
+  notes     String?
+
+  version  Int     @default(1)
+  isLatest Boolean @default(true)
+
+  revisions InvoiceRevision[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([isLatest])
+}
+
+model InvoiceRevision {
+  id         String   @id @default(cuid())
+  invoiceId  String
+  version    Int
+  snapshot   Json
+  changedBy  String?
+  changeNote String?
+  createdAt  DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, version])
+  @@index([invoiceId])
 }
 
 model Interaction {
@@ -234,7 +276,7 @@ model ImportJob {
 model ImportRow {
   id               String    @id @default(uuid())
   jobId            String
-  job              ImportJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job              ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   rowIndex         Int
   raw              Json
   normalized       Json?
@@ -246,4 +288,31 @@ model ImportRow {
   error            String?
 
   @@unique([jobId, rowIndex])
+}
+
+model AgentActionRequest {
+  id               String    @id @default(uuid())
+  agentId          String    @default("openclaw:nia")
+  actionType       String
+  status           String    @default("pending")
+  payload          Json
+  rationale        String    @db.Text
+  idempotencyKey   String
+  contactId        String?
+  contact          Contact?  @relation(fields: [contactId], references: [id])
+  expiresAt        DateTime
+  reviewedByUserId String?
+  reviewer         User?     @relation("AgentActionReviewer", fields: [reviewedByUserId], references: [id])
+  reviewedAt       DateTime?
+  executedAt       DateTime?
+  result           Json?
+  error            String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([agentId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([contactId])
+  @@index([expiresAt])
+  @@index([reviewedByUserId])
 }

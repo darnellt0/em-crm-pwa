@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { CreateTaskSchema } from "@/lib/validations/task";
 import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("read_only");
     const url = req.nextUrl;
     const ownerFilter = url.searchParams.get("owner");
     const statusFilter = url.searchParams.get("status");
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateTaskSchema.safeParse(body);
     if (!parsed.success) {

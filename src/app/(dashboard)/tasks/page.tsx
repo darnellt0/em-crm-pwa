@@ -43,10 +43,7 @@ export default function TasksPage() {
   const params = new URLSearchParams();
   if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
 
-  const { data, loading, refetch } = useApi<any>(
-    `/api/tasks?${params.toString()}`,
-    [statusFilter]
-  );
+  const { data, loading, refetch } = useApi<any>(`/api/tasks?${params.toString()}`);
 
   const tasks = data?.tasks || [];
 

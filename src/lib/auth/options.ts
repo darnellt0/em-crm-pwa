@@ -4,23 +4,52 @@ import type { Adapter } from "next-auth/adapters";
 import EmailProvider from "next-auth/providers/email";
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/db/prisma";
+import {
+  getConfiguredRole,
+  isEmailAllowed,
+  normalizeEmail,
+} from "@/lib/auth/accessPolicy";
+
+const smtpPort = Number(process.env.SMTP_PORT) || 1025;
+const smtpUser = process.env.SMTP_USER?.trim();
+const smtpPassword = process.env.SMTP_PASSWORD;
+const smtpServer = {
+  host: process.env.SMTP_HOST || "127.0.0.1",
+  port: smtpPort,
+  secure: process.env.SMTP_SECURE === "true" || smtpPort === 465,
+  auth:
+    smtpUser && smtpPassword
+      ? { user: smtpUser, pass: smtpPassword }
+      : undefined,
+};
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as Adapter,
   providers: [
     EmailProvider({
-      server: {
-        host: process.env.SMTP_HOST || "localhost",
-        port: Number(process.env.SMTP_PORT) || 1025,
-        auth: undefined, // MailHog doesn't require auth
-      },
+      server: smtpServer,
       from: process.env.EMAIL_FROM || "Elevated Movements <no-reply@localhost>",
-      sendVerificationRequest: async ({ identifier: email, url }) => {
+      sendVerificationRequest: async ({ identifier: email, url, provider }) => {
+        if (!isEmailAllowed(email)) {
+          throw new Error("EMAIL_NOT_ALLOWED");
+        }
+
+        const server = (
+          typeof provider.server === "string"
+            ? {
+                host: process.env.SMTP_HOST || "127.0.0.1",
+                port: smtpPort,
+                secure: smtpServer.secure,
+                auth: smtpServer.auth,
+              }
+            : provider.server
+        ) as typeof smtpServer;
+
         const transport = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || "localhost",
-          port: Number(process.env.SMTP_PORT) || 1025,
-          secure: false,
-          tls: { rejectUnauthorized: false },
+          host: server.host,
+          port: server.port,
+          secure: server.secure,
+          auth: server.auth,
         });
 
         await transport.sendMail({
@@ -45,15 +74,34 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: {
-    strategy: "database",
+    strategy: "jwt",
   },
   callbacks: {
-    async session({ session, user }) {
-      if (session.user) {
-        (session.user as any).id = user.id;
+    async signIn({ user }) {
+      if (!user.email || !isEmailAllowed(user.email)) return false;
+
+      if (user.id) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: normalizeEmail(user.email),
+          },
+        });
+      }
+      return true;
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        (session.user as any).id = token.sub;
         // Always read role from DB so any role change takes effect immediately.
         const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
+          where: { id: token.sub },
           select: { role: true },
         });
         (session.user as any).role = dbUser?.role || "staff";
@@ -62,30 +110,14 @@ export const authOptions: NextAuthOptions = {
     },
   },
   events: {
-    /**
-     * Fired by the PrismaAdapter immediately after the User row is inserted.
-     *
-     * Role assignment strategy (source of truth: prisma/seed.ts):
-     *   - Darnell and Shria are created as `admin` by `pnpm db:seed` before
-     *     they ever sign in, so their rows already have the correct role.
-     *   - Any user who signs in for the first time and was NOT pre-seeded
-     *     defaults to `staff`.
-     *
-     * We do NOT use in-memory properties (e.g. __pendingRole) because the
-     * `user` object passed to this event is a fresh DB-sourced object
-     * constructed by the PrismaAdapter — transient properties set on the
-     * `user` object in `signIn` are not propagated here and cannot be
-     * relied upon.
-     */
     async createUser({ user }) {
-      // The PrismaAdapter creates the user with no role field set (or the
-      // Prisma default). Explicitly set `staff` for any new unseeded user so
-      // the role is always an explicit, known value rather than relying on a
-      // DB default that could change.
-      if (user.id) {
+      if (user.id && user.email) {
         await prisma.user.update({
           where: { id: user.id },
-          data: { role: "staff" },
+          data: {
+            email: normalizeEmail(user.email),
+            role: getConfiguredRole(user.email),
+          },
         });
       }
     },

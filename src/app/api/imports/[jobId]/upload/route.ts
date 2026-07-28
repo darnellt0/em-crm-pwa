@@ -1,34 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
-
-function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return { headers: [], rows: [] };
-
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  const rows: Record<string, string>[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-    const row: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      row[h] = values[idx] || "";
-    });
-    rows.push(row);
-  }
-
-  return { headers, rows };
-}
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
+import { parseCsvRecords } from "@/lib/import/csv";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
+    const { jobId } = await params;
 
-    const job = await prisma.importJob.findUnique({ where: { id: params.jobId } });
+    const job = await prisma.importJob.findUnique({ where: { id: jobId } });
     if (!job) {
       return NextResponse.json({ ok: false, error: "Import job not found" }, { status: 404 });
     }
@@ -48,7 +31,7 @@ export async function POST(
       csvText = await req.text();
     }
 
-    const { headers, rows } = parseCSV(csvText);
+    const { headers, rows } = parseCsvRecords(csvText);
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, error: "No data rows found in CSV" }, { status: 400 });
@@ -57,7 +40,7 @@ export async function POST(
     // Create ImportRow entries
     await prisma.importRow.createMany({
       data: rows.map((raw, idx) => ({
-        jobId: params.jobId,
+        jobId,
         rowIndex: idx,
         raw: raw as any,
         status: "pending",
@@ -66,7 +49,7 @@ export async function POST(
 
     // Update job status
     await prisma.importJob.update({
-      where: { id: params.jobId },
+      where: { id: jobId },
       data: { status: "parsed" },
     });
 

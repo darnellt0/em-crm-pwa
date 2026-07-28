@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const CreateProgramSchema = z.object({
@@ -10,7 +10,7 @@ const CreateProgramSchema = z.object({
 
 export async function GET() {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const programs = await prisma.program.findMany({
       include: { _count: { select: { enrollments: true } } },
       orderBy: { name: "asc" },
@@ -23,7 +23,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateProgramSchema.safeParse(body);
     if (!parsed.success) {

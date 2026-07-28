@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { CreateImportJobSchema } from "@/lib/validations/import";
 
 export async function GET() {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
     const jobs = await prisma.importJob.findMany({
       include: {
         creator: { select: { id: true, name: true, email: true } },
@@ -21,7 +21,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("partner_admin");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateImportJobSchema.safeParse(body);
     if (!parsed.success) {

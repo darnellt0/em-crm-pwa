@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { ImportMappingSchema } from "@/lib/validations/import";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
 
-    const job = await prisma.importJob.findUnique({ where: { id: params.jobId } });
+    const job = await prisma.importJob.findUnique({ where: { id: (await params).jobId } });
     if (!job) {
       return NextResponse.json({ ok: false, error: "Import job not found" }, { status: 404 });
     }
@@ -22,7 +22,7 @@ export async function POST(
     }
 
     await prisma.importJob.update({
-      where: { id: params.jobId },
+      where: { id: (await params).jobId },
       data: {
         mapping: parsed.data.mapping as any,
         status: "mapped",

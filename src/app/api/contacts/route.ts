@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { CreateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
 import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const url = req.nextUrl;
     const q = url.searchParams.get("q") || "";
     const stage = url.searchParams.get("stage") || "";
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const tag = url.searchParams.get("tag") || "";
     const followUp = url.searchParams.get("followUp") || "";
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25));
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
     const skip = (page - 1) * limit;
 
     const where: Prisma.ContactWhereInput = {};
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateContactSchema.safeParse(body);
     if (!parsed.success) {

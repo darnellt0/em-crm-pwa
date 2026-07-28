@@ -15,8 +15,10 @@ const { mockPrisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       create: vi.fn(),
     },
+    interaction: { create: vi.fn() },
     importRow: { create: vi.fn() },
     importJob: { update: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -44,8 +46,12 @@ beforeEach(() => {
   mockPrisma.organization.create.mockResolvedValue({ id: "org_1", name: "ACME" });
   mockPrisma.contact.create.mockResolvedValue({ id: "c_new" });
   mockPrisma.contact.update.mockResolvedValue({ id: "c_existing" });
+  mockPrisma.interaction.create.mockResolvedValue({});
   mockPrisma.importRow.create.mockResolvedValue({});
   mockPrisma.importJob.update.mockResolvedValue({});
+  mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockPrisma) => unknown) =>
+    callback(mockPrisma)
+  );
 });
 
 // ─── Identity anchor tests ────────────────────────────────────────────────────
@@ -154,6 +160,65 @@ describe("deduplication", () => {
 
     expect(result.updated).toBe(1);
     expect(result.rows[0].matchType).toBe("phone");
+  });
+
+  it("reports a phone match when an email lookup misses first", async () => {
+    mockPrisma.contact.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "c_phone",
+        email: null,
+        phone: "5551234567",
+        phoneNormalized: "+15551234567",
+        tags: [],
+        persona: null,
+        firstName: "Bob",
+        lastName: null,
+        source: null,
+        lifecycleStage: "lead",
+        leadScore: 0,
+        ownerUserId: null,
+        organizationId: null,
+        nextFollowUpAt: null,
+        lastTouchAt: null,
+      });
+
+    const result = await runCrmContactImport(prisma, [
+      { email: "new@example.com", phone: "5551234567" },
+    ]);
+
+    expect(result.rows[0].matchType).toBe("phone");
+  });
+
+  it("preserves source and lifecycle stage when sparse input omits them", async () => {
+    mockPrisma.contact.findUnique.mockResolvedValueOnce({
+      id: "c_existing",
+      email: "customer@example.com",
+      phone: null,
+      phoneNormalized: null,
+      tags: [],
+      persona: null,
+      firstName: "Existing",
+      lastName: null,
+      source: "referral",
+      lifecycleStage: "customer",
+      leadScore: 0,
+      ownerUserId: null,
+      organizationId: null,
+      nextFollowUpAt: null,
+      lastTouchAt: null,
+    });
+
+    await runCrmContactImport(prisma, [{ email: "customer@example.com" }]);
+
+    expect(mockPrisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: "referral",
+          lifecycleStage: "customer",
+        }),
+      })
+    );
   });
 });
 
@@ -505,11 +570,43 @@ describe("dry run", () => {
     expect(result.created).toBe(2);
     expect(result.skipped).toBe(1);
   });
+
+  it("predicts duplicates created earlier in the same preview", async () => {
+    const result = await runCrmContactImport(
+      prisma,
+      [
+        { email: "same@example.com", firstName: "First" },
+        { email: "same@example.com", lastName: "Second" },
+      ],
+      { dryRun: true }
+    );
+
+    expect(result.created).toBe(1);
+    expect(result.updated).toBe(1);
+    expect(result.rows.map((row) => row.action)).toEqual(["created", "updated"]);
+    expect(result.rows[1].matchType).toBe("email");
+  });
 });
 
 // ─── ImportJob finalization tests ─────────────────────────────────────────────
 
 describe("ImportJob finalization", () => {
+  it("writes each contact, note, and import result inside one transaction", async () => {
+    const result = await runCrmContactImport(
+      prisma,
+      [{ email: "atomic@example.com", notes: "Keep these writes together" }],
+      { importJobId: "job_1" }
+    );
+
+    expect(result.errored).toBe(0);
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.contact.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.interaction.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.importRow.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "success" }) })
+    );
+  });
+
   it("updates ImportJob with final stats when importJobId is provided", async () => {
     await runCrmContactImport(
       prisma,
@@ -522,7 +619,7 @@ describe("ImportJob finalization", () => {
         where: { id: "job_1" },
         data: expect.objectContaining({
           status: "completed",
-          stats: expect.objectContaining({ created: 1, total: 1 }),
+          stats: expect.objectContaining({ created: 1, totalRows: 1 }),
         }),
       })
     );

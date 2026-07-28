@@ -1,7 +1,7 @@
-import { defineConfig } from "vitest/config";
+// vitest.config.ts
 import path from "path";
 
-export default defineConfig({
+const config = {
   test: {
     environment: "node",
     globals: false,
@@ -12,4 +12,6 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-});
+};
+
+export default config;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const CreateViewSchema = z.object({
@@ -15,7 +15,7 @@ const CreateViewSchema = z.object({
 // GET /api/views?entity=contacts
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("read_only");
     const entity = req.nextUrl.searchParams.get("entity") || "contacts";
 
     const views = await prisma.savedView.findMany({
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 // POST /api/views
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateViewSchema.safeParse(body);
 

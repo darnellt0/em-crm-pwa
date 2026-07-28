@@ -3,29 +3,18 @@
  *
  * Cleaned-master CRM import logic.
  *
- * Schema facts (from prisma/schema.prisma):
- *   Contact: id, firstName, lastName, email (unique), phone, phoneNormalized (unique),
- *            persona, source, lifecycleStage, leadScore, tags (String[]), lastTouchAt,
- *            nextFollowUpAt, ownerUserId, organizationId
- *   Organization: id, name (NOT unique — use findFirst + create)
- *   ImportJob: id, createdByUserId, entity, filename, status, mapping, stats
- *   ImportRow: id, jobId, rowIndex, raw, normalized, status, action, matchType,
- *              matchedContactId, error
- *
  * Rules:
- *   - Dedupe by email first, then by normalized phone.
- *   - Phone-only contacts (no email) are allowed.
- *   - Bounced/unsubscribed contacts: add tags only, never enroll in marketing.
- *   - "Needs Review" tag is preserved.
- *   - persona field is used for notes (append, never overwrite).
- *   - Owner mapped to existing user by email; unmatched owners ignored.
- *   - Organization: findFirst by name, create if not found.
- *   - dryRun=true previews without writing.
+ * - Dedupe by email first, then by normalized phone.
+ * - Phone-only contacts are allowed.
+ * - Bounced/unsubscribed/suppressed contacts are imported as CRM-safe metadata only.
+ * - Needs Review is preserved.
+ * - Notes append to persona instead of overwriting.
+ * - Owner is mapped by user email.
+ * - Organization is found by name or created if missing.
  */
 
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePhone } from "@/lib/phone/normalize";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CrmContactRow {
   firstName?: string;
@@ -39,20 +28,21 @@ export interface CrmContactRow {
   organization?: string;
   title?: string;
   source?: string;
+  status?: string;
   sourceMemberships?: string;
   tags?: string;
   relationshipType?: string;
   contactType?: string;
-  owner?: string;           // email of the owner user
-  priority?: string;        // high | medium | low
+  owner?: string;
+  priority?: string;
   lifecycleStage?: string;
   preferredChannel?: string;
-  notes?: string;           // stored in persona field
-  nextFollowUpAt?: string;  // ISO date string
-  lastContactedAt?: string; // ISO date string
+  notes?: string;
+  nextFollowUpAt?: string;
+  lastContactedAt?: string;
   canonicalId?: string;
-  reviewStatus?: string;    // Needs Review | Ready | etc.
-  metadataJson?: string;    // raw JSON string from cleaned master
+  reviewStatus?: string;
+  metadataJson?: string;
 }
 
 export interface CrmImportRowResult {
@@ -73,33 +63,67 @@ export interface CrmImportSummary {
   errored: number;
   rows: CrmImportRowResult[];
   dryRun: boolean;
+  phoneOnlyRows: number;
+  needsReviewRows: number;
+  warnings: string[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type NormalizedCrmContact = {
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  phoneNormalized: string | null;
+  persona: string | null;
+  source: string | null;
+  lifecycleStage: string | null;
+  leadScore: number | null;
+  tags: string[];
+  nextFollowUpAt: Date | null;
+  lastTouchAt: Date | null;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  reviewStatus: string | null;
+  ownerEmail: string | null;
+  organization: string | null;
+};
 
 const PRIORITY_TO_LEAD_SCORE: Record<string, number> = {
   high: 80,
   medium: 50,
-  low: 20,
+  low: 20
 };
 
-function parseTags(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(/[,;]+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-function normalizeEmailStr(raw: string | undefined): string | null {
+function normalizeEmail(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null;
   return raw.trim().toLowerCase();
 }
 
-function appendPersona(
-  existing: string | null | undefined,
-  incoming: string | undefined
-): string | null {
+function parseTags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,;]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function parseDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseMetadata(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return { importMetadataRaw: value };
+  }
+}
+
+function appendPersona(existing: string | null | undefined, incoming: string | null | undefined): string | null {
   const base = existing?.trim() ?? "";
   const next = incoming?.trim() ?? "";
   if (!next) return base || null;
@@ -107,249 +131,437 @@ function appendPersona(
   return base ? `${base}\n${next}` : next;
 }
 
-// ─── Main import function ─────────────────────────────────────────────────────
+function crmSafeStatusTags(status: string | null, reviewStatus: string | null) {
+  const tags: string[] = [];
+  const normalizedStatus = status?.trim().toLowerCase();
+  const normalizedReview = reviewStatus?.trim().toLowerCase();
+
+  if (normalizedReview === "needs review" || normalizedReview?.includes("review")) {
+    tags.push("Needs Review");
+  }
+  if (normalizedStatus === "bounced") {
+    tags.push("Email Bounce", "Do Not Market");
+  }
+  if (normalizedStatus === "unsubscribed") {
+    tags.push("Unsubscribed", "Do Not Market");
+  }
+  if (normalizedStatus === "complained" || normalizedStatus === "suppressed") {
+    tags.push("Do Not Market");
+  }
+  return tags;
+}
+
+function leadScoreFromPriority(priority: string | null) {
+  if (!priority) return null;
+  return PRIORITY_TO_LEAD_SCORE[priority.trim().toLowerCase()] ?? null;
+}
+
+function shouldSkip(contact: NormalizedCrmContact) {
+  return !contact.email && !contact.phoneNormalized && !contact.firstName && !contact.lastName;
+}
+
+function rowWarning(contact: NormalizedCrmContact, error: unknown) {
+  const identifier = contact.email ?? contact.phoneNormalized ?? "row";
+  const message = error instanceof Error ? error.message : "Unknown row error";
+  return `${identifier}: ${message}`;
+}
+
+type ImportDbClient = PrismaClient | Prisma.TransactionClient;
+
+const existingContactSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  phoneNormalized: true,
+  persona: true,
+  source: true,
+  lifecycleStage: true,
+  leadScore: true,
+  tags: true,
+  ownerUserId: true,
+  organizationId: true,
+  nextFollowUpAt: true,
+  lastTouchAt: true,
+} as const;
+
+type ExistingContact = Prisma.ContactGetPayload<{ select: typeof existingContactSelect }>;
+type ContactMatch = {
+  contact: ExistingContact;
+  matchType: "email" | "phone";
+};
+
+async function findExistingContact(
+  prisma: ImportDbClient,
+  contact: NormalizedCrmContact
+): Promise<ContactMatch | null> {
+  if (contact.email) {
+    const byEmail = await prisma.contact.findUnique({
+      where: { email: contact.email },
+      select: existingContactSelect,
+    });
+    if (byEmail) return { contact: byEmail, matchType: "email" };
+  }
+
+  if (contact.phoneNormalized) {
+    const byPhone = await prisma.contact.findUnique({
+      where: { phoneNormalized: contact.phoneNormalized },
+      select: existingContactSelect,
+    });
+    if (byPhone) return { contact: byPhone, matchType: "phone" };
+  }
+
+  return null;
+}
+
+async function appendImportNote(prisma: ImportDbClient, contactId: string, note: string | null) {
+  if (!note) return;
+  await prisma.interaction.create({
+    data: {
+      contactId,
+      type: "note",
+      summary: note,
+      outcome: "Imported from cleaned master",
+      occurredAt: new Date()
+    }
+  });
+}
 
 export async function runCrmContactImport(
-  prisma: any,
+  prisma: PrismaClient,
   rows: CrmContactRow[],
-  opts: { dryRun?: boolean; importJobId?: string; createdByUserId?: string } = {}
+  opts: { dryRun?: boolean; importJobId?: string } = {}
 ): Promise<CrmImportSummary> {
-  const { dryRun = false } = opts;
+  const dryRun = opts.dryRun === true;
   const results: CrmImportRowResult[] = [];
   let created = 0;
   let updated = 0;
   let skipped = 0;
   let errored = 0;
+  let phoneOnlyRows = 0;
+  let needsReviewRows = 0;
+  const warnings: string[] = [];
+  const previewByEmail = new Map<string, ExistingContact>();
+  const previewByPhone = new Map<string, ExistingContact>();
 
-  // Pre-load all users for owner mapping (email → userId)
-  const allUsers: Array<{ id: string; email: string }> = await prisma.user.findMany({
-    select: { id: true, email: true },
+  const rememberPreviewContact = (contact: ExistingContact) => {
+    if (contact.email) previewByEmail.set(contact.email, contact);
+    if (contact.phoneNormalized) previewByPhone.set(contact.phoneNormalized, contact);
+  };
+
+  const allUsers = await prisma.user.findMany({
+    select: { id: true, email: true }
   });
-  const userByEmail = new Map<string, string>(
-    allUsers.map((u) => [u.email.toLowerCase(), u.id])
-  );
+  const userByEmail = new Map(allUsers.map((user) => [user.email.toLowerCase(), user.id] as const));
 
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
-    const emailNorm = normalizeEmailStr(row.email);
-    const phoneNorm = normalizePhone(row.phone);
+    const normalizedContact = normalizeIncomingRow(row);
 
-    // Skip rows with no identity anchor
-    if (!emailNorm && !phoneNorm && !row.firstName && !row.lastName) {
+    if (!normalizedContact.email && normalizedContact.phoneNormalized) {
+      phoneOnlyRows += 1;
+    }
+    if (normalizedContact.tags.some((tag) => tag.toLowerCase() === "needs review")) {
+      needsReviewRows += 1;
+    }
+
+    if (shouldSkip(normalizedContact)) {
+      skipped += 1;
       results.push({
         rowIndex,
         email: row.email ?? "",
         phone: row.phone ?? "",
         action: "skipped",
-        reason: "no identity anchor (no email, phone, or name)",
+        reason: "no identity anchor (no email, phone, or name)"
       });
-      skipped++;
       continue;
     }
 
     try {
-      // ── Dedupe ──────────────────────────────────────────────────────────────
-      let existingContact: any = null;
-      let matchType: "email" | "phone" | undefined;
-
-      if (emailNorm) {
-        existingContact = await prisma.contact.findUnique({ where: { email: emailNorm } });
-        if (existingContact) matchType = "email";
+      let match = await findExistingContact(prisma, normalizedContact);
+      if (!match && dryRun && normalizedContact.email) {
+        const previewContact = previewByEmail.get(normalizedContact.email);
+        if (previewContact) match = { contact: previewContact, matchType: "email" };
       }
-      if (!existingContact && phoneNorm) {
-        existingContact = await prisma.contact.findUnique({ where: { phoneNormalized: phoneNorm } });
-        if (existingContact) matchType = "phone";
+      if (!match && dryRun && normalizedContact.phoneNormalized) {
+        const previewContact = previewByPhone.get(normalizedContact.phoneNormalized);
+        if (previewContact) match = { contact: previewContact, matchType: "phone" };
       }
 
-      // ── Parse incoming tags ─────────────────────────────────────────────────
-      const incomingTags = parseTags(row.tags);
+      const incomingTags = [...normalizedContact.tags];
+      addContextTags(incomingTags, row);
 
-      // Preserve "Needs Review" tag if reviewStatus indicates it
-      if (
-        row.reviewStatus?.toLowerCase().includes("review") &&
-        !incomingTags.includes("Needs Review")
-      ) {
-        incomingTags.push("Needs Review");
-      }
+      const ownerUserId = normalizedContact.ownerEmail
+        ? (userByEmail.get(normalizedContact.ownerEmail) ?? null)
+        : null;
 
-      // Add suppression tags (CRM-safe metadata only — no marketing enrollment)
-      if (row.tags?.includes("Email Bounce") && !incomingTags.includes("Email Bounce")) {
-        incomingTags.push("Email Bounce");
-      }
-      if (row.tags?.includes("Unsubscribed") && !incomingTags.includes("Unsubscribed")) {
-        incomingTags.push("Unsubscribed");
-      }
+      if (match) {
+        const { contact: existingContact, matchType } = match;
+        const mergedTags = Array.from(new Set([...(existingContact.tags ?? []), ...incomingTags]));
+        const finalPersona = appendPersona(existingContact.persona, normalizedContact.notes);
+        const finalNextFollowUpAt = normalizedContact.nextFollowUpAt ?? existingContact.nextFollowUpAt ?? null;
+        const finalLastTouchAt = normalizedContact.lastTouchAt ?? existingContact.lastTouchAt ?? null;
 
-      // Add context tags from metadata fields
-      if (row.preferredName) incomingTags.push(`preferred:${row.preferredName}`);
-      if (row.preferredChannel) incomingTags.push(`channel:${row.preferredChannel}`);
-      if (row.contactType) incomingTags.push(`type:${row.contactType}`);
-      if (row.relationshipType) incomingTags.push(`rel:${row.relationshipType}`);
-      if (row.canonicalId) incomingTags.push(`cid:${row.canonicalId}`);
-      if (row.sourceMemberships) incomingTags.push(`src:${row.sourceMemberships}`);
-
-      // Owner mapping
-      const ownerEmail = row.owner?.trim().toLowerCase();
-      const ownerUserId = ownerEmail ? (userByEmail.get(ownerEmail) ?? null) : null;
-
-      // Lead score from priority
-      const leadScore = row.priority
-        ? (PRIORITY_TO_LEAD_SCORE[row.priority.toLowerCase()] ?? undefined)
-        : undefined;
-
-      // Dates
-      const nextFollowUpAt = row.nextFollowUpAt ? new Date(row.nextFollowUpAt) : null;
-      const lastTouchAt = row.lastContactedAt ? new Date(row.lastContactedAt) : null;
-
-      // Organization — findFirst by name, create if not found
-      let organizationId: string | null = null;
-      if (row.organization?.trim() && !dryRun) {
-        const orgName = row.organization.trim();
-        const existingOrg = await prisma.organization.findFirst({ where: { name: orgName } });
-        if (existingOrg) {
-          organizationId = existingOrg.id;
-        } else {
-          const newOrg = await prisma.organization.create({ data: { name: orgName } });
-          organizationId = newOrg.id;
-        }
-      }
-
-      if (existingContact) {
-        // ── Update existing contact ────────────────────────────────────────────
-        const existingTags: string[] = existingContact.tags ?? [];
-        const mergedTags = Array.from(new Set([...existingTags, ...incomingTags]));
-
-        const finalPersona = appendPersona(existingContact.persona, row.notes);
-
-        // Preserve existing nextFollowUpAt if import value is blank
-        const finalNextFollowUpAt = nextFollowUpAt ?? existingContact.nextFollowUpAt ?? null;
-
-        if (!dryRun) {
-          await prisma.contact.update({
-            where: { id: existingContact.id },
-            data: {
-              firstName: row.firstName || existingContact.firstName || undefined,
-              lastName: row.lastName || existingContact.lastName || undefined,
-              email: emailNorm ?? existingContact.email ?? undefined,
-              phone: row.phone || existingContact.phone || undefined,
-              phoneNormalized: phoneNorm ?? existingContact.phoneNormalized ?? undefined,
-              source: row.source || existingContact.source || undefined,
-              lifecycleStage: row.lifecycleStage || existingContact.lifecycleStage || "lead",
-              leadScore: leadScore ?? existingContact.leadScore,
-              tags: mergedTags,
-              persona: finalPersona ?? undefined,
-              ownerUserId: ownerUserId ?? existingContact.ownerUserId ?? undefined,
-              organizationId: organizationId ?? existingContact.organizationId ?? undefined,
-              nextFollowUpAt: finalNextFollowUpAt,
-              lastTouchAt: lastTouchAt ?? existingContact.lastTouchAt ?? undefined,
-            },
+        if (dryRun) {
+          rememberPreviewContact({
+            ...existingContact,
+            firstName: normalizedContact.firstName ?? existingContact.firstName,
+            lastName: normalizedContact.lastName ?? existingContact.lastName,
+            email: normalizedContact.email ?? existingContact.email,
+            phone: normalizedContact.phone ?? existingContact.phone,
+            phoneNormalized: normalizedContact.phoneNormalized ?? existingContact.phoneNormalized,
+            persona: finalPersona,
+            source: normalizedContact.source ?? existingContact.source,
+            lifecycleStage: normalizedContact.lifecycleStage ?? existingContact.lifecycleStage ?? "lead",
+            leadScore: normalizedContact.leadScore ?? existingContact.leadScore,
+            tags: mergedTags,
+            ownerUserId: ownerUserId ?? existingContact.ownerUserId,
+            nextFollowUpAt: finalNextFollowUpAt,
+            lastTouchAt: finalLastTouchAt,
           });
-
-          if (opts.importJobId) {
-            await prisma.importRow.create({
+        } else {
+          await prisma.$transaction(async (tx) => {
+            const organizationId = await resolveOrganizationId(tx, normalizedContact.organization);
+            await tx.contact.update({
+              where: { id: existingContact.id },
               data: {
-                jobId: opts.importJobId,
-                rowIndex,
-                raw: row as any,
-                normalized: { email: emailNorm, phone: phoneNorm, tags: mergedTags } as any,
-                status: "success",
-                action: "updated",
-                matchType,
-                matchedContactId: existingContact.id,
+                firstName: normalizedContact.firstName ?? existingContact.firstName ?? undefined,
+                lastName: normalizedContact.lastName ?? existingContact.lastName ?? undefined,
+                email: normalizedContact.email ?? existingContact.email ?? undefined,
+                phone: normalizedContact.phone ?? existingContact.phone ?? undefined,
+                phoneNormalized: normalizedContact.phoneNormalized ?? existingContact.phoneNormalized ?? undefined,
+                persona: finalPersona ?? undefined,
+                source: normalizedContact.source ?? existingContact.source ?? undefined,
+                lifecycleStage: normalizedContact.lifecycleStage ?? existingContact.lifecycleStage ?? "lead",
+                leadScore: normalizedContact.leadScore ?? existingContact.leadScore,
+                tags: mergedTags,
+                ownerUserId: ownerUserId ?? existingContact.ownerUserId ?? undefined,
+                organizationId: organizationId ?? existingContact.organizationId ?? undefined,
+                nextFollowUpAt: finalNextFollowUpAt,
+                lastTouchAt: finalLastTouchAt,
               },
             });
-          }
+
+            await appendImportNote(tx, existingContact.id, normalizedContact.notes);
+
+            if (opts.importJobId) {
+              await tx.importRow.create({
+                data: {
+                  jobId: opts.importJobId,
+                  rowIndex,
+                  raw: row as any,
+                  normalized: buildNormalizedPayload(normalizedContact, mergedTags) as any,
+                  status: "success",
+                  action: "updated",
+                  matchType,
+                  matchedContactId: existingContact.id,
+                },
+              });
+            }
+          });
         }
 
-        updated++;
+        updated += 1;
         results.push({
           rowIndex,
-          email: emailNorm ?? "",
-          phone: phoneNorm ?? "",
+          email: normalizedContact.email ?? "",
+          phone: normalizedContact.phoneNormalized ?? normalizedContact.phone ?? "",
           action: "updated",
           matchType,
-          matchedContactId: existingContact.id,
+          matchedContactId: existingContact.id
         });
       } else {
-        // ── Create new contact ─────────────────────────────────────────────────
-        if (!dryRun) {
-          const newContact = await prisma.contact.create({
-            data: {
-              firstName: row.firstName || undefined,
-              lastName: row.lastName || undefined,
-              email: emailNorm ?? undefined,
-              phone: row.phone || undefined,
-              phoneNormalized: phoneNorm ?? undefined,
-              source: row.source || "cleaned-master-import",
-              lifecycleStage: row.lifecycleStage || "lead",
-              leadScore: leadScore ?? 0,
-              tags: incomingTags,
-              persona: row.notes || undefined,
-              ownerUserId: ownerUserId ?? undefined,
-              organizationId: organizationId ?? undefined,
-              nextFollowUpAt: nextFollowUpAt ?? undefined,
-              lastTouchAt: lastTouchAt ?? undefined,
-            },
+        if (dryRun) {
+          rememberPreviewContact({
+            id: `preview-${rowIndex}`,
+            firstName: normalizedContact.firstName,
+            lastName: normalizedContact.lastName,
+            email: normalizedContact.email,
+            phone: normalizedContact.phone,
+            phoneNormalized: normalizedContact.phoneNormalized,
+            persona: normalizedContact.notes,
+            source: normalizedContact.source ?? "cleaned-master",
+            lifecycleStage: normalizedContact.lifecycleStage ?? "lead",
+            leadScore: normalizedContact.leadScore ?? 0,
+            tags: incomingTags,
+            ownerUserId,
+            organizationId: null,
+            nextFollowUpAt: normalizedContact.nextFollowUpAt,
+            lastTouchAt: normalizedContact.lastTouchAt,
           });
-
-          if (opts.importJobId) {
-            await prisma.importRow.create({
+        } else {
+          await prisma.$transaction(async (tx) => {
+            const organizationId = await resolveOrganizationId(tx, normalizedContact.organization);
+            const newContact = await tx.contact.create({
               data: {
-                jobId: opts.importJobId,
-                rowIndex,
-                raw: row as any,
-                normalized: { email: emailNorm, phone: phoneNorm, tags: incomingTags } as any,
-                status: "success",
-                action: "created",
-                matchedContactId: newContact.id,
+                firstName: normalizedContact.firstName ?? undefined,
+                lastName: normalizedContact.lastName ?? undefined,
+                email: normalizedContact.email ?? undefined,
+                phone: normalizedContact.phone ?? undefined,
+                phoneNormalized: normalizedContact.phoneNormalized ?? undefined,
+                persona: normalizedContact.notes ?? undefined,
+                source: normalizedContact.source ?? "cleaned-master",
+                lifecycleStage: normalizedContact.lifecycleStage ?? "lead",
+                leadScore: normalizedContact.leadScore ?? 0,
+                tags: incomingTags,
+                ownerUserId: ownerUserId ?? undefined,
+                organizationId: organizationId ?? undefined,
+                nextFollowUpAt: normalizedContact.nextFollowUpAt ?? undefined,
+                lastTouchAt: normalizedContact.lastTouchAt ?? undefined,
               },
             });
-          }
+
+            await appendImportNote(tx, newContact.id, normalizedContact.notes);
+
+            if (opts.importJobId) {
+              await tx.importRow.create({
+                data: {
+                  jobId: opts.importJobId,
+                  rowIndex,
+                  raw: row as any,
+                  normalized: buildNormalizedPayload(normalizedContact, incomingTags) as any,
+                  status: "success",
+                  action: "created",
+                  matchedContactId: newContact.id,
+                },
+              });
+            }
+          });
         }
 
-        created++;
+        created += 1;
         results.push({
           rowIndex,
-          email: emailNorm ?? "",
-          phone: phoneNorm ?? "",
-          action: "created",
+          email: normalizedContact.email ?? "",
+          phone: normalizedContact.phoneNormalized ?? normalizedContact.phone ?? "",
+          action: "created"
         });
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "unknown error";
+    } catch (error) {
+      errored += 1;
+      const message = error instanceof Error ? error.message : "unknown error";
+      warnings.push(rowWarning(normalizedContact, error));
       results.push({
         rowIndex,
-        email: row.email ?? "",
-        phone: row.phone ?? "",
+        email: normalizedContact.email ?? "",
+        phone: normalizedContact.phoneNormalized ?? normalizedContact.phone ?? "",
         action: "error",
-        reason: msg,
+        reason: message
       });
-      errored++;
 
       if (!dryRun && opts.importJobId) {
-        await prisma.importRow.create({
-          data: {
-            jobId: opts.importJobId,
-            rowIndex,
-            raw: row as any,
-            status: "error",
-            error: msg,
-          },
-        }).catch(() => {});
+        await prisma.importRow
+          .create({
+            data: {
+              jobId: opts.importJobId,
+              rowIndex,
+              raw: row as any,
+              normalized: buildNormalizedPayload(normalizedContact, normalizedContact.tags) as any,
+              status: "error",
+              error: message
+            }
+          })
+          .catch(() => {});
       }
     }
   }
 
-  // Finalize ImportJob
   if (!dryRun && opts.importJobId) {
     await prisma.importJob.update({
       where: { id: opts.importJobId },
       data: {
-        status: "completed",
-        stats: { total: rows.length, created, updated, skipped, errored } as any,
-      },
+        status: errored > 0 ? "completed_with_errors" : "completed",
+        stats: {
+          totalRows: rows.length,
+          created,
+          updated,
+          skipped,
+          errored,
+          phoneOnlyRows,
+          needsReviewRows
+        } as any
+      }
     });
   }
 
-  return { totalRows: rows.length, created, updated, skipped, errored, rows: results, dryRun };
+  return {
+    totalRows: rows.length,
+    created,
+    updated,
+    skipped,
+    errored,
+    rows: results,
+    dryRun,
+    phoneOnlyRows,
+    needsReviewRows,
+    warnings
+  };
+}
+
+function normalizeIncomingRow(row: CrmContactRow): NormalizedCrmContact {
+  const metadata = parseMetadata(row.metadataJson ?? null);
+  const canonicalId = row.canonicalId?.trim();
+  if (canonicalId) {
+    metadata.canonicalId = canonicalId;
+  }
+
+  return {
+    firstName: row.firstName?.trim() || null,
+    lastName: row.lastName?.trim() || null,
+    email: normalizeEmail(row.email),
+    phone: row.phone?.trim() || null,
+    phoneNormalized: normalizePhone(row.phone),
+    persona: row.preferredName?.trim() || row.contactType?.trim() || row.relationshipType?.trim() || null,
+    source: row.source?.trim() || null,
+    lifecycleStage: row.lifecycleStage?.trim() || null,
+    leadScore: leadScoreFromPriority(row.priority ?? null),
+    tags: Array.from(new Set([
+      ...parseTags(row.tags),
+      ...crmSafeStatusTags(row.status ?? null, row.reviewStatus ?? null)
+    ])),
+    nextFollowUpAt: parseDate(row.nextFollowUpAt ?? null),
+    lastTouchAt: parseDate(row.lastContactedAt ?? null),
+    notes: row.notes?.trim() || null,
+    metadata,
+    reviewStatus: row.reviewStatus?.trim() || null,
+    ownerEmail: normalizeEmail(row.owner),
+    organization: row.organization?.trim() || null
+  };
+}
+
+function addContextTags(tags: string[], row: CrmContactRow) {
+  if (row.preferredName) tags.push(`preferred:${row.preferredName}`);
+  if (row.preferredChannel) tags.push(`channel:${row.preferredChannel}`);
+  if (row.contactType) tags.push(`type:${row.contactType}`);
+  if (row.relationshipType) tags.push(`rel:${row.relationshipType}`);
+  if (row.canonicalId) tags.push(`cid:${row.canonicalId}`);
+  if (row.sourceMemberships) tags.push(`src:${row.sourceMemberships}`);
+}
+
+async function resolveOrganizationId(
+  prisma: ImportDbClient,
+  organization: string | null
+) {
+  if (!organization) return null;
+
+  const existing = await prisma.organization.findFirst({ where: { name: organization } });
+  if (existing) return existing.id;
+
+  const created = await prisma.organization.create({ data: { name: organization } });
+  return created.id;
+}
+
+function buildNormalizedPayload(contact: NormalizedCrmContact, tags: string[]) {
+  return {
+    email: contact.email,
+    phone: contact.phone,
+    phoneNormalized: contact.phoneNormalized,
+    tags,
+    reviewStatus: contact.reviewStatus,
+    canonicalId: contact.metadata.canonicalId ?? null,
+    metadataJson: contact.metadata,
+    source: contact.source,
+    lifecycleStage: contact.lifecycleStage
+  };
 }

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const url = req.nextUrl;
     const status = url.searchParams.get("status") || "proposed";
     const q = url.searchParams.get("q") || "";

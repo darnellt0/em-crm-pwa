@@ -14,8 +14,7 @@ export default function SemanticSearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data, loading, error } = useApi<any>(
-    searchQuery ? `/api/memory/search?q=${encodeURIComponent(searchQuery)}&limit=20` : null,
-    [searchQuery]
+    searchQuery ? `/api/memory/search?q=${encodeURIComponent(searchQuery)}&limit=20` : null
   );
 
   const results = data?.results || [];

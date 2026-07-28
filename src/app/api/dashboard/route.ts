@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 
 export async function GET() {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("read_only");
 
     const now = new Date();
 
