@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useApi, apiPost } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,8 +65,13 @@ interface SavedView {
 }
 
 export default function ContactsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const canDelete = role === "admin" || role === "partner_admin";
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -75,18 +81,18 @@ export default function ContactsPage() {
 
   // Fetch saved views for contacts
   const { data: viewsData, refetch: refetchViews } = useApi<any>(
-    "/api/views?entity=contacts",
-    []
+    "/api/views?entity=contacts"
   );
   const savedViews: SavedView[] = viewsData?.views || [];
 
   const params = new URLSearchParams();
   if (search) params.set("q", search);
   if (stageFilter && stageFilter !== "all") params.set("stage", stageFilter);
+  params.set("page", String(page));
+  params.set("limit", String(pageSize));
 
   const { data, loading, refetch } = useApi<any>(
-    `/api/contacts?${params.toString()}`,
-    [search, stageFilter]
+    `/api/contacts?${params.toString()}`
   );
 
   const contacts = data?.items || [];
@@ -100,6 +106,7 @@ export default function ContactsPage() {
     else setSearch("");
     if (filters.stage) setStageFilter(filters.stage);
     else setStageFilter("");
+    setPage(1);
   }, []);
 
   // Clear active view
@@ -107,6 +114,7 @@ export default function ContactsPage() {
     setActiveViewId(null);
     setSearch("");
     setStageFilter("");
+    setPage(1);
   }, []);
 
   // Save current filters as a new view
@@ -378,11 +386,11 @@ export default function ContactsPage() {
           <Input
             placeholder="Search contacts..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-10"
           />
         </div>
-        <Select value={stageFilter} onValueChange={setStageFilter}>
+        <Select value={stageFilter} onValueChange={(v) => { setStageFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="All Stages" />
           </SelectTrigger>
@@ -449,6 +457,20 @@ export default function ContactsPage() {
                 <CheckSquare className="h-3 w-3 mr-1" />
                 Create Task
               </Button>
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    if (confirm(`Permanently delete ${selected.size} contact${selected.size !== 1 ? "s" : ""}? This cannot be undone.`)) {
+                      handleBulkAction("delete");
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" />
+                  Delete
+                </Button>
+              )}
             </div>
             <Button
               size="sm"
@@ -460,6 +482,36 @@ export default function ContactsPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Pagination */}
+      {total > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Rows per page:</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-[80px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[25, 50, 100].map(n => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <span>
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+              Previous
+            </Button>
+            <Button variant="outline" size="sm" disabled={page * pageSize >= total} onClick={() => setPage(p => p + 1)}>
+              Next
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Contact Table */}

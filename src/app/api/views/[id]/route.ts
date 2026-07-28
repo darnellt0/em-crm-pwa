@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const UpdateViewSchema = z.object({
@@ -14,13 +14,13 @@ const UpdateViewSchema = z.object({
 // GET /api/views/[id]
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("read_only");
 
     const view = await prisma.savedView.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     if (!view) {
@@ -41,13 +41,13 @@ export async function GET(
 // PATCH /api/views/[id]
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("staff");
 
     const existing = await prisma.savedView.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     if (!existing) {
@@ -76,7 +76,7 @@ export async function PATCH(
     if (parsed.data.columns !== undefined) updateData.columns = parsed.data.columns;
 
     const view = await prisma.savedView.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: updateData,
     });
 
@@ -89,13 +89,13 @@ export async function PATCH(
 // DELETE /api/views/[id]
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("staff");
 
     const existing = await prisma.savedView.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     if (!existing) {
@@ -106,7 +106,7 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Only the owner can delete this view" }, { status: 403 });
     }
 
-    await prisma.savedView.delete({ where: { id: params.id } });
+    await prisma.savedView.delete({ where: { id: (await params).id } });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

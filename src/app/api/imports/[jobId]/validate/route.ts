@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { normalizePhone } from "@/lib/phone/normalize";
 
 /**
@@ -13,13 +13,13 @@ import { normalizePhone } from "@/lib/phone/normalize";
  */
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    await requireUser();
+    await requireRole("partner_admin");
 
     const job = await prisma.importJob.findUnique({
-      where: { id: params.jobId },
+      where: { id: (await params).jobId },
       include: { rows: { orderBy: { rowIndex: "asc" } } },
     });
 

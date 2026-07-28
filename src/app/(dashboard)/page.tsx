@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import {
   Users,
   CheckSquare,
@@ -9,44 +9,36 @@ import {
   TrendingUp,
   MessageSquare,
   AlertTriangle,
-  CalendarClock,
   Bell,
   ArrowUpRight,
   ArrowDownRight,
   Minus,
   DollarSign,
   UserPlus,
-  Clock,
+  Flame,
 } from "lucide-react";
 import {
   AreaChart,
   Area,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
 import { useApi } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-interface FocusTask {
+interface PriorityAction {
   id: string;
+  type: "task" | "opportunity" | "invoice" | "followup";
   title: string;
-  priority: string;
-  dueAt: string | null;
-  contact: { id: string; firstName: string; lastName: string } | null;
-}
-
-interface FocusContact {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  lifecycleStage: string;
-  nextFollowUpAt: string | null;
+  score: number;
+  reason: string;
+  link: string;
 }
 
 interface DashboardData {
@@ -67,12 +59,6 @@ interface DashboardData {
     interactionSparkline: Array<{ date: string; count: number }>;
     overdueFollowUps: number;
     followUpsDueToday: number;
-    focus: {
-      myTasksDueToday: FocusTask[];
-      myOverdueTasks: FocusTask[];
-      overdueFollowUpContacts: FocusContact[];
-      followUpsTodayContacts: FocusContact[];
-    };
   };
 }
 
@@ -86,12 +72,11 @@ const stageColors: Record<string, string> = {
   other: "bg-gray-100 text-gray-800",
 };
 
-const priorityColors: Record<string, string> = {
-  urgent: "bg-red-100 text-red-800",
-  high: "bg-orange-100 text-orange-800",
-  medium: "bg-yellow-100 text-yellow-800",
-  low: "bg-gray-100 text-gray-700",
-};
+function scoreBadgeClass(score: number) {
+  if (score >= 80) return "bg-red-100 text-red-800 border-red-200";
+  if (score >= 60) return "bg-amber-100 text-amber-800 border-amber-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
 
 function StatCard({
   title,
@@ -137,78 +122,36 @@ function StatCard({
   return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
-function FocusTaskRow({ task, overdue }: { task: FocusTask; overdue?: boolean }) {
+function PriorityActionRow({ action }: { action: PriorityAction }) {
   return (
-    <div className="flex items-start gap-3 py-2 border-b last:border-0">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{task.title}</p>
-        {task.contact && (
-          <p className="text-xs text-muted-foreground truncate">
-            {task.contact.firstName} {task.contact.lastName}
-          </p>
-        )}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <Badge className={cn("text-xs", priorityColors[task.priority] || priorityColors.medium)}>
-          {task.priority}
-        </Badge>
-        {task.dueAt && (
-          <span className={cn("text-xs", overdue ? "text-destructive font-medium" : "text-muted-foreground")}>
-            {overdue
-              ? formatDistanceToNow(new Date(task.dueAt), { addSuffix: true })
-              : format(new Date(task.dueAt), "h:mm a")}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FocusContactRow({ contact, overdue }: { contact: FocusContact; overdue?: boolean }) {
-  return (
-    <Link href={`/contacts/${contact.id}`}>
-      <div className="flex items-center gap-3 py-2 border-b last:border-0 hover:bg-muted/40 rounded px-1 -mx-1 transition-colors">
-        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <span className="text-primary text-xs font-semibold">
-            {contact.firstName?.[0] || "?"}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">
-            {contact.firstName} {contact.lastName}
-          </p>
-          {contact.email && (
-            <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge className={cn("text-xs", stageColors[contact.lifecycleStage] || stageColors.other)}>
-            {contact.lifecycleStage}
-          </Badge>
-          {contact.nextFollowUpAt && (
-            <span className={cn("text-xs", overdue ? "text-destructive font-medium" : "text-muted-foreground")}>
-              {overdue
-                ? formatDistanceToNow(new Date(contact.nextFollowUpAt), { addSuffix: true })
-                : format(new Date(contact.nextFollowUpAt), "h:mm a")}
-            </span>
-          )}
-        </div>
-      </div>
-    </Link>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link href={action.link}>
+          <div className="flex items-start gap-3 rounded-lg border border-transparent px-3 py-3 transition-colors hover:border-border hover:bg-muted/40">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{action.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{action.reason}</p>
+            </div>
+            <Badge className={cn("shrink-0 border text-xs font-semibold", scoreBadgeClass(action.score))}>
+              {action.score}
+            </Badge>
+          </div>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent>
+        This action is prioritized due to {action.reason}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 export default function DashboardPage() {
   const { data, loading } = useApi<DashboardData>("/api/dashboard");
+  const { data: focusData, loading: focusLoading } = useApi<{ ok: boolean; actions: PriorityAction[] }>("/api/actions/focus");
   const stats = data?.stats;
+  const priorityActions = focusData?.actions ?? [];
 
   const todayLabel = format(new Date(), "EEEE, MMMM d");
-
-  const totalFocusItems =
-    (stats?.focus?.myOverdueTasks?.length ?? 0) +
-    (stats?.focus?.myTasksDueToday?.length ?? 0) +
-    (stats?.focus?.overdueFollowUpContacts?.length ?? 0) +
-    (stats?.focus?.followUpsTodayContacts?.length ?? 0);
 
   if (loading) {
     return (
@@ -341,7 +284,7 @@ export default function DashboardPage() {
                     tickLine={false}
                   />
                   <YAxis hide allowDecimals={false} />
-                  <Tooltip
+                  <ChartTooltip
                     formatter={(v: number) => [v, "Interactions"]}
                     labelFormatter={(l) => format(new Date(l + "T12:00:00"), "MMM d")}
                     contentStyle={{ fontSize: 12 }}
@@ -363,97 +306,47 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Today's Focus + Contact Stage Breakdown */}
+      {/* Priority Actions + Contact Stage Breakdown */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-primary" />
-              Today&apos;s Focus
-              {totalFocusItems > 0 && (
+              <Flame className="h-4 w-4 text-primary" />
+              Priority Actions
+              {priorityActions.length > 0 && (
                 <Badge className="ml-auto bg-primary/10 text-primary text-xs">
-                  {totalFocusItems} item{totalFocusItems !== 1 ? "s" : ""}
+                  {Math.min(priorityActions.length, 5)} item{priorityActions.length !== 1 ? "s" : ""}
                 </Badge>
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {totalFocusItems === 0 && (
+          <CardContent>
+            {focusLoading ? (
+              <div className="space-y-3">
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="h-16 animate-pulse rounded-lg bg-muted" />
+                ))}
+              </div>
+            ) : priorityActions.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">
-                You&apos;re all caught up! Nothing urgent today.
+                You&apos;re all caught up! Nothing urgent right now.
               </p>
-            )}
-
-            {(stats?.focus?.myOverdueTasks?.length ?? 0) > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                  <h3 className="text-xs font-semibold text-destructive uppercase tracking-wide">
-                    Overdue Tasks ({stats!.focus.myOverdueTasks.length})
-                  </h3>
+            ) : (
+              <TooltipProvider>
+                <div className="space-y-2">
+                  {priorityActions.slice(0, 5).map((action) => (
+                    <PriorityActionRow key={`${action.type}-${action.id}`} action={action} />
+                  ))}
                 </div>
-                {stats!.focus.myOverdueTasks.map((t) => (
-                  <FocusTaskRow key={t.id} task={t} overdue />
-                ))}
-              </div>
-            )}
-
-            {(stats?.focus?.myTasksDueToday?.length ?? 0) > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-3.5 w-3.5 text-amber-500" />
-                  <h3 className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
-                    Tasks Due Today ({stats!.focus.myTasksDueToday.length})
-                  </h3>
+                <div className="flex gap-2 pt-4">
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/tasks?due=overdue">View Tasks</Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/pipeline">View Pipeline</Link>
+                  </Button>
                 </div>
-                {stats!.focus.myTasksDueToday.map((t) => (
-                  <FocusTaskRow key={t.id} task={t} />
-                ))}
-              </div>
-            )}
-
-            {(stats?.focus?.overdueFollowUpContacts?.length ?? 0) > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Bell className="h-3.5 w-3.5 text-destructive" />
-                  <h3 className="text-xs font-semibold text-destructive uppercase tracking-wide">
-                    Overdue Follow-ups ({stats!.overdueFollowUps})
-                  </h3>
-                </div>
-                {stats!.focus.overdueFollowUpContacts.map((c) => (
-                  <FocusContactRow key={c.id} contact={c} overdue />
-                ))}
-                {stats!.overdueFollowUps > stats!.focus.overdueFollowUpContacts.length && (
-                  <Link href="/contacts?followUp=overdue" className="text-xs text-primary hover:underline block mt-1">
-                    +{stats!.overdueFollowUps - stats!.focus.overdueFollowUpContacts.length} more &rarr;
-                  </Link>
-                )}
-              </div>
-            )}
-
-            {(stats?.focus?.followUpsTodayContacts?.length ?? 0) > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <CalendarClock className="h-3.5 w-3.5 text-amber-500" />
-                  <h3 className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
-                    Follow-ups Today ({stats!.followUpsDueToday})
-                  </h3>
-                </div>
-                {stats!.focus.followUpsTodayContacts.map((c) => (
-                  <FocusContactRow key={c.id} contact={c} />
-                ))}
-              </div>
-            )}
-
-            {totalFocusItems > 0 && (
-              <div className="flex gap-2 pt-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/tasks?due=overdue">View All Tasks</Link>
-                </Button>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/contacts?followUp=overdue">View All Follow-ups</Link>
-                </Button>
-              </div>
+              </TooltipProvider>
             )}
           </CardContent>
         </Card>

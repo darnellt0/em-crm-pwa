@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -527,7 +528,7 @@ export default function ImportPage() {
                 Import Another File
               </Button>
               <Button variant="outline" asChild>
-                <a href="/contacts">View Contacts</a>
+                <Link href="/contacts">View Contacts</Link>
               </Button>
             </div>
           </CardContent>

@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +36,7 @@ import {
   TrendingUp,
   AlertCircle,
   Clock,
+  Trash2,
 } from "lucide-react";
 
 const stageColors: Record<string, string> = {
@@ -49,6 +51,10 @@ const stageColors: Record<string, string> = {
 
 export default function ContactDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const canDelete = role === "admin" || role === "partner_admin";
   const { data: contactData, loading, refetch } = useApi<any>(`/api/contacts/${id}`);
   const { data: interactionsData, refetch: refetchInteractions } = useApi<any>(
     `/api/contacts/${id}/interactions`
@@ -109,6 +115,19 @@ export default function ContactDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm(`Permanently delete ${contact?.firstName} ${contact?.lastName}? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      toast.success("Contact deleted");
+      router.replace("/contacts");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete contact");
+    }
+  };
+
   const handleCompleteTask = async (taskId: string) => {
     try {
       await apiPatch(`/api/tasks/${taskId}`, { status: "done" });
@@ -151,7 +170,7 @@ export default function ContactDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold">
             {[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "Unnamed Contact"}
           </h1>
@@ -166,6 +185,12 @@ export default function ContactDetailPage() {
             ))}
           </div>
         </div>
+        {canDelete && (
+          <Button variant="destructive" size="sm" onClick={handleDelete}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+        )}
       </div>
 
       {/* Next Action Banner */}

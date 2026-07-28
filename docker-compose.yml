@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: em_app
       POSTGRES_PASSWORD: em_secure_password
     ports:
-      - "5432:5432"
+      - "${CRM_POSTGRES_PORT:-5434}:5432"
     volumes:
       - em_pgdata:/var/lib/postgresql/data
 

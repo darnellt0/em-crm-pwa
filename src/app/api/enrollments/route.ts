@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { z } from "zod";
 
 const CreateEnrollmentSchema = z.object({
@@ -11,7 +11,7 @@ const CreateEnrollmentSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateEnrollmentSchema.safeParse(body);
     if (!parsed.success) {

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { generateEmbedding } from "@/lib/ai/ollama";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    await requireRole("read_only");
     const q = req.nextUrl.searchParams.get("q");
     const limit = Math.min(50, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 20));
 

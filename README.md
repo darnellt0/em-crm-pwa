@@ -1,6 +1,6 @@
 # Elevated Movements CRM V1.6.1
 
-AI-powered Contact Relationship Management system built with Next.js 14, Prisma, PostgreSQL (pgvector), Auth.js, and Ollama.
+AI-powered Contact Relationship Management system built with Next.js 15, Prisma, PostgreSQL (pgvector), Auth.js, and Ollama.
 
 ## Features
 
@@ -34,7 +34,7 @@ AI-powered Contact Relationship Management system built with Next.js 14, Prisma,
 ## Prerequisites
 
 - Docker & Docker Compose
-- Node.js 18+
+- Node.js 20+
 - pnpm
 
 ## Quick Start
@@ -65,13 +65,15 @@ pnpm verify
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and sign in with your email. For local development, check MailHog at [http://localhost:8025](http://localhost:8025) for your magic link.
+Open the URL configured in `NEXTAUTH_URL` and sign in with an allowlisted email. For local development, check MailHog at the URL configured in `NEXT_PUBLIC_MAIL_PREVIEW_URL`.
+
+For Day 1 operating instructions, local backup, and import verification, see `docs/day-1-runbook.md`.
 
 ### Service URLs
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| CRM App | [http://localhost:3000](http://localhost:3000) | Main application |
+| CRM App | [http://localhost:3001](http://localhost:3001) | Main application |
 | MailHog | [http://localhost:8025](http://localhost:8025) | Email testing UI (catches all outbound emails in dev) |
 | n8n | [http://localhost:5678](http://localhost:5678) | Workflow automation builder |
 
@@ -83,12 +85,21 @@ Copy `.env.example` to `.env.local` and configure:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `NEXTAUTH_SECRET` | Random secret for session encryption |
-| `NEXTAUTH_URL` | Base URL of your app (e.g., `http://localhost:3000`) |
-| `SMTP_HOST` | SMTP server hostname (use `localhost` for local dev with MailHog) |
+| `NEXTAUTH_URL` | Canonical app URL (e.g., `http://localhost:3001` or a private Tailscale address) |
+| `NEXT_PUBLIC_MAIL_PREVIEW_URL` | Optional MailHog URL shown only for local testing; remove when using real SMTP |
+| `ADMIN_EMAILS` | Comma-separated exact emails with full access; at least one is required |
+| `PARTNER_ADMIN_EMAILS` | Exact emails allowed to import and perform destructive contact operations |
+| `STAFF_EMAILS` | Exact emails allowed to perform routine CRM writes |
+| `READ_ONLY_EMAILS` | Exact emails restricted to read operations |
+| `ALLOWED_EMAILS` | Additional invited emails receiving the default `staff` role |
+| `SMTP_HOST` | SMTP server hostname (use `127.0.0.1` for local MailHog) |
 | `SMTP_PORT` | SMTP port (1025 for MailHog) |
+| `SMTP_SECURE` | `true` for implicit TLS, normally on port 465 |
+| `SMTP_USER` / `SMTP_PASSWORD` | Credentials for a real SMTP provider |
 | `EMAIL_FROM` | Sender email address |
 | `OLLAMA_URL` | Ollama API URL (default: `http://127.0.0.1:11434`) |
-| `INTERNAL_SERVICE_TOKEN` | Token for internal API calls (embedding worker) |
+| `INTERNAL_SERVICE_TOKEN` | Read/internal token for the embedding worker and limited OpenClaw reads |
+| `OPENCLAW_WRITE_TOKEN` | Separate token that can submit validated OpenClaw proposals but cannot execute them |
 
 ## Role Hierarchy
 
@@ -100,8 +111,10 @@ Copy `.env.example` to `.env.local` and configure:
 | `read_only` | View-only access |
 
 **Role Assignment:**
-- Darnell and Shria are deterministically created as `admin` users via the `pnpm db:seed` script.
-- Any other user who signs in for the first time will default to the `staff` role.
+- The configured role lists set initial roles for new users. Role changes made in Settings persist across sign-ins.
+- `pnpm db:seed` intentionally reconciles roles from the environment, so rerunning it can replace role changes made in Settings.
+- Only exact emails configured in the allowlist or role lists can request or redeem a magic link.
+- Imports and destructive contact operations require `partner_admin` or `admin`.
 
 ## Backup and Restore
 
@@ -126,23 +139,27 @@ If you want to use AI features:
 To generate embeddings for approved memories, call the internal endpoint:
 
 ```bash
-curl -X POST http://localhost:3000/api/embeddings/run \
+curl -X POST http://localhost:3001/api/embeddings/run \
   -H "x-internal-token: YOUR_INTERNAL_SERVICE_TOKEN" \
   -H "Content-Type: application/json"
 ```
 
 This can be scheduled via cron, n8n workflow, or triggered after memory approval.
 
-## Internal Ops Summary For Nia
+## OpenClaw Integration For Nia
 
 Nia can read a limited operational CRM summary through the internal endpoint:
 
 ```bash
-curl http://localhost:3000/api/internal/ops-summary \
+curl http://localhost:3001/api/internal/ops-summary \
   -H "x-internal-token: YOUR_INTERNAL_SERVICE_TOKEN"
 ```
 
-This endpoint is read-only and returns aggregate CRM health, pipeline, task, follow-up, and memory-review counts plus short focus lists. It does not expose full CRM notes or memory bodies.
+The read endpoints return operational health and limited contact identity fields. They do not expose full CRM notes or memory bodies.
+
+Nia can also submit proposals for five controlled actions: creating a task, logging an interaction, scheduling a follow-up, updating a lifecycle stage, or adding tags. Proposals use a separate `OPENCLAW_WRITE_TOKEN` and cannot directly change CRM data. An admin or partner admin must approve each proposal on the **Agent Approvals** page; only an `executed` proposal has changed the CRM.
+
+Deletion, merges, imports, invoices, opportunities, user roles, bulk changes, and direct database access are not available to the OpenClaw integration. See `integrations/openclaw/README.md` for installation and security details.
 
 ## Saved Views
 

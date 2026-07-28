@@ -5,6 +5,8 @@ node_modules
 
 # testing
 /coverage
+backups/
+*.log
 
 # next.js
 /.next/
@@ -33,9 +35,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# prisma
-prisma/migrations/**/migration_lock.toml
 
 # Claude Code settings
 .claude/

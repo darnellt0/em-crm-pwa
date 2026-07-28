@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser, handleAuthError } from "@/lib/auth/requireRole";
+import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { MemoryBulkActionSchema } from "@/lib/validations/bulk";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireRole("staff");
     const parsed = MemoryBulkActionSchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
