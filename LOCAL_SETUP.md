@@ -34,7 +34,9 @@ Open `.env.local` and update the following:
 3. **`ADMIN_EMAILS`**: Enter the exact email addresses that should have full access, separated by commas. At least one is required.
 4. **Role lists**: Add other invited users to `PARTNER_ADMIN_EMAILS`, `STAFF_EMAILS`, or `READ_ONLY_EMAILS`. These lists set the initial role for new users; later role changes in Settings persist across sign-ins. `ALLOWED_EMAILS` grants the initial `staff` role. Unlisted addresses are denied.
 5. **`NEXTAUTH_URL`**: Set this to the exact URL both users will open. For private remote access, use this computer's Tailscale URL or IP, such as `http://100.x.y.z:3001`.
-6. **`OLLAMA_URL`**:
+6. **`CRM_PRIVATE_BIND_IP`**: Keep `127.0.0.1` unless another tailnet device must open MailHog. During local MailHog use, set it to the host's Tailscale IP. PostgreSQL, SMTP, and n8n remain localhost-only.
+7. **`OPENCLAW_WRITE_TOKEN`**: Generate a third random string that is different from `INTERNAL_SERVICE_TOKEN`.
+8. **`OLLAMA_URL`**:
    - If Ollama is running on your host machine (Windows/Mac), use `http://host.docker.internal:11434`
    - If Ollama is running directly in WSL or Linux, use `http://127.0.0.1:11434`
 
@@ -93,10 +95,10 @@ The CRM runs on a single host machine and shares one database. For a second pers
 1. **Connect both machines to the same network.** The simplest safe option is [Tailscale](https://tailscale.com) (free for personal use) — install it on both machines and note the host machine's Tailscale name or IP (e.g. `main-pc.tailnet-name.ts.net` or `100.x.y.z`). Being on the same home/office Wi-Fi also works; use the host's LAN IP.
 2. **Point `NEXTAUTH_URL` at the shared address.** In `.env.local` on the host, set:
    ```
-   NEXTAUTH_URL="http://<host-address>:3000"
+   NEXTAUTH_URL="http://<host-address>:3001"
    ```
    Then restart the app. Magic sign-in links are generated from this URL, so **both people must open the CRM at this address** (including on the host machine — not `localhost`).
-3. **Sign-in emails land in MailHog on the host.** The second person opens `http://<host-address>:8025`, finds their "Sign in to Elevated Movements CRM" email, and clicks the link.
+3. **During local testing, expose only MailHog's UI on the private address.** Set `CRM_PRIVATE_BIND_IP=<host-address>` in `.env`, recreate MailHog with `docker compose up -d mailhog`, and open `http://<host-address>:8025`. Replace MailHog with real SMTP before depending on the CRM for daily operations.
 4. **Do not port-forward these ports to the public internet.** The app runs over plain HTTP with a dev mail catcher; keep access limited to your LAN or tailnet.
 
 For daily use, run the host in production mode (faster than the dev server):
@@ -109,6 +111,29 @@ MailHog is a shared development inbox, not a production email service. For daily
 
 Do not expose ports 5434, 5678, 8025, or 1025 to the public internet. Use Tailscale or another private network for multi-device access.
 
+## Automatic Production Startup
+
+Build the current version once, then install the per-user Windows scheduled tasks:
+
+```powershell
+pnpm build
+pnpm ops:install
+```
+
+The tasks start the CRM 45 seconds after sign-in, create a database backup daily at 7:00 PM, and verify the newest backup in a temporary database every Sunday at 7:30 PM. They run only while the configured Windows user is signed in.
+
+Check the running system at any time:
+
+```powershell
+pnpm health:production
+```
+
+Remove the tasks with:
+
+```powershell
+Get-ScheduledTask -TaskName "ElevatedMovementsCRM*" | Unregister-ScheduledTask -Confirm:$false
+```
+
 ## Backup and Restore
 
 To create a compressed backup of your local database:
@@ -120,6 +145,12 @@ pnpm backup:db
 To restore a backup (this will overwrite your current database):
 ```bash
 pnpm restore:db ./backups/em_crm_backup_YYYYMMDD_HHMMSS.sql.gz
+```
+
+Verify that the latest backup can be restored without touching the live database:
+
+```powershell
+pnpm backup:verify
 ```
 
 ## Troubleshooting

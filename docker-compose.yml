@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: em_app
       POSTGRES_PASSWORD: em_secure_password
     ports:
-      - "${CRM_POSTGRES_PORT:-5434}:5432"
+      - "127.0.0.1:${CRM_POSTGRES_PORT:-5434}:5432"
     volumes:
       - em_pgdata:/var/lib/postgresql/data
 
@@ -18,8 +18,8 @@ services:
     container_name: em_mailhog
     restart: unless-stopped
     ports:
-      - "1025:1025" # SMTP port
-      - "8025:8025" # Web UI
+      - "127.0.0.1:1025:1025" # SMTP is only used by the local CRM process
+      - "${CRM_PRIVATE_BIND_IP:-127.0.0.1}:8025:8025" # Optional private MailHog UI
 
   # Automation & Workers (n8n)
   n8n:
@@ -27,7 +27,7 @@ services:
     container_name: em_n8n
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
