@@ -88,14 +88,15 @@ model Contact {
   organizationId  String?
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
-  interactions  Interaction[]
-  opportunities Opportunity[]
-  invoices      Invoice[]
-  enrollments   Enrollment[]
-  tasks         Task[]
-  memories      AiMemoryItem[]
-  importRows    ImportRow[]
-  agentActions  AgentActionRequest[]
+  interactions         Interaction[]
+  opportunities        Opportunity[]
+  invoices             Invoice[]
+  enrollments          Enrollment[]
+  tasks                Task[]
+  memories             AiMemoryItem[]
+  importRows           ImportRow[]
+  agentActions         AgentActionRequest[]
+  campaignSyncReceipts CampaignSyncReceipt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -105,6 +106,19 @@ model Contact {
   @@index([lifecycleStage])
   @@index([ownerUserId])
   @@index([nextFollowUpAt])
+}
+
+model CampaignSyncReceipt {
+  id              String   @id @default(cuid())
+  externalEventId String   @unique
+  eventType       String
+  contactId       String?
+  contact         Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  payload         Json
+  receivedAt      DateTime @default(now())
+
+  @@index([contactId, receivedAt])
+  @@index([eventType, receivedAt])
 }
 
 model Organization {

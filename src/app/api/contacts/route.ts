@@ -3,49 +3,34 @@ import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { CreateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
+import { buildContactWhere } from "@/lib/contacts/filters";
 import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireRole("read_only");
+    const { userId } = await requireRole("read_only");
     const url = req.nextUrl;
     const q = url.searchParams.get("q") || "";
     const stage = url.searchParams.get("stage") || "";
     const owner = url.searchParams.get("owner") || "";
     const tag = url.searchParams.get("tag") || "";
     const followUp = url.searchParams.get("followUp") || "";
+    const marketing = url.searchParams.get("marketing") || "";
+    const contactMethod = url.searchParams.get("contactMethod") || "";
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
     const skip = (page - 1) * limit;
 
-    const where: Prisma.ContactWhereInput = {};
-
-    if (q) {
-      where.OR = [
-        { firstName: { contains: q, mode: "insensitive" } },
-        { lastName: { contains: q, mode: "insensitive" } },
-        { email: { contains: q, mode: "insensitive" } },
-        { phone: { contains: q } },
-      ];
-    }
-
-    if (stage) where.lifecycleStage = stage;
-    if (owner) where.ownerUserId = owner;
-    if (tag) where.tags = { has: tag };
-
-    if (followUp === "today") {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 999);
-      where.nextFollowUpAt = { gte: start, lte: end };
-    } else if (followUp === "overdue") {
-      where.nextFollowUpAt = { lt: new Date() };
-    } else if (followUp === "7days") {
-      const end = new Date();
-      end.setDate(end.getDate() + 7);
-      where.nextFollowUpAt = { lte: end, gte: new Date() };
-    }
+    const where = buildContactWhere({
+      q,
+      stage,
+      owner,
+      tag,
+      followUp,
+      marketing,
+      contactMethod,
+      userId,
+    });
 
     const [items, total] = await Promise.all([
       prisma.contact.findMany({

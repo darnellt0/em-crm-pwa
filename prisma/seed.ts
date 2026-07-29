@@ -57,14 +57,18 @@ async function main() {
   if (!owner) {
     throw new Error("Seed owner user was not created");
   }
+  const shria = seedShriaEmail
+    ? await prisma.user.findUnique({ where: { email: seedShriaEmail } })
+    : null;
 
   const views = [
-    { name: "Today's Follow-Ups", filters: { nextFollowUpAt: "today" } },
-    { name: "Needs Review", filters: { tags: ["Needs Review"] } },
-    { name: "Phone Only", filters: { phoneOnly: true } },
-    { name: "Email Bounce / Do Not Market", filters: { tags: ["Email Bounce", "Do Not Market"] } },
-    { name: "Shria-Owned", filters: { ownerEmail: seedShriaEmail || roleLists[0][1][1] } },
-    { name: "High Priority", filters: { tags: ["High Priority"], priority: "high" } }
+    { name: "Today's Follow-Ups", filters: { followUp: "today" } },
+    { name: "Needs Review", filters: { tag: "Needs Review" } },
+    { name: "Marketable Needs Review", filters: { tag: "Needs Review", marketing: "marketable" } },
+    { name: "Phone Only", filters: { contactMethod: "phone_only" } },
+    { name: "Email Bounce / Do Not Market", filters: { marketing: "suppressed" } },
+    ...(shria ? [{ name: "Shria-Owned", filters: { owner: shria.id } }] : []),
+    { name: "High Priority", filters: { tag: "High Priority" } }
   ];
 
   for (const view of views) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useApi, apiPost } from "@/hooks/useApi";
@@ -64,12 +64,24 @@ interface SavedView {
   ownerUserId: string;
 }
 
+interface CRMUser {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
 export default function ContactsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
+  const canEdit = Boolean(role && role !== "read_only");
   const canDelete = role === "admin" || role === "partner_admin";
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [followUpFilter, setFollowUpFilter] = useState("");
+  const [marketingFilter, setMarketingFilter] = useState("");
+  const [contactMethodFilter, setContactMethodFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -78,16 +90,38 @@ export default function ContactsPage() {
   const [newViewName, setNewViewName] = useState("");
   const [newViewShared, setNewViewShared] = useState(false);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
+  const [bulkTag, setBulkTag] = useState("");
+
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search);
+    setSearch(initial.get("q") || "");
+    setStageFilter(initial.get("stage") || "");
+    setOwnerFilter(initial.get("owner") || "");
+    setTagFilter(initial.get("tag") || "");
+    setFollowUpFilter(initial.get("followUp") || "");
+    setMarketingFilter(initial.get("marketing") || "");
+    setContactMethodFilter(initial.get("contactMethod") || "");
+  }, []);
 
   // Fetch saved views for contacts
   const { data: viewsData, refetch: refetchViews } = useApi<any>(
     "/api/views?entity=contacts"
   );
   const savedViews: SavedView[] = viewsData?.views || [];
+  const { data: usersData } = useApi<any>(canEdit ? "/api/users" : null);
+  const users: CRMUser[] = useMemo(() => usersData?.users || [], [usersData]);
 
   const params = new URLSearchParams();
   if (search) params.set("q", search);
   if (stageFilter && stageFilter !== "all") params.set("stage", stageFilter);
+  if (ownerFilter && ownerFilter !== "all") params.set("owner", ownerFilter);
+  if (tagFilter) params.set("tag", tagFilter);
+  if (followUpFilter && followUpFilter !== "all") params.set("followUp", followUpFilter);
+  if (marketingFilter && marketingFilter !== "all") params.set("marketing", marketingFilter);
+  if (contactMethodFilter && contactMethodFilter !== "all") params.set("contactMethod", contactMethodFilter);
   params.set("page", String(page));
   params.set("limit", String(pageSize));
 
@@ -106,14 +140,35 @@ export default function ContactsPage() {
     else setSearch("");
     if (filters.stage) setStageFilter(filters.stage);
     else setStageFilter("");
+    if (filters.owner) setOwnerFilter(filters.owner);
+    else setOwnerFilter("");
+    const legacyTags = Array.isArray(filters.tags) ? filters.tags : [];
+    setTagFilter(filters.tag || legacyTags[0] || "");
+    if (filters.followUp || filters.nextFollowUpAt) setFollowUpFilter(filters.followUp || filters.nextFollowUpAt);
+    else setFollowUpFilter("");
+    if (filters.marketing) setMarketingFilter(filters.marketing);
+    else if (legacyTags.includes("Do Not Market")) setMarketingFilter("suppressed");
+    else if (legacyTags.includes("Email Bounce")) setMarketingFilter("bounced");
+    else setMarketingFilter("");
+    if (filters.contactMethod || filters.phoneOnly) setContactMethodFilter(filters.contactMethod || "phone_only");
+    else setContactMethodFilter("");
+    if (!filters.owner && filters.ownerEmail) {
+      const matchedOwner = users.find((user) => user.email === filters.ownerEmail);
+      setOwnerFilter(matchedOwner?.id || "");
+    }
     setPage(1);
-  }, []);
+  }, [users]);
 
   // Clear active view
   const clearView = useCallback(() => {
     setActiveViewId(null);
     setSearch("");
     setStageFilter("");
+    setOwnerFilter("");
+    setTagFilter("");
+    setFollowUpFilter("");
+    setMarketingFilter("");
+    setContactMethodFilter("");
     setPage(1);
   }, []);
 
@@ -131,6 +186,11 @@ export default function ContactsPage() {
         filters: {
           ...(search ? { search } : {}),
           ...(stageFilter && stageFilter !== "all" ? { stage: stageFilter } : {}),
+          ...(ownerFilter && ownerFilter !== "all" ? { owner: ownerFilter } : {}),
+          ...(tagFilter ? { tag: tagFilter } : {}),
+          ...(followUpFilter && followUpFilter !== "all" ? { followUp: followUpFilter } : {}),
+          ...(marketingFilter && marketingFilter !== "all" ? { marketing: marketingFilter } : {}),
+          ...(contactMethodFilter && contactMethodFilter !== "all" ? { contactMethod: contactMethodFilter } : {}),
         },
         sort: [],
         columns: [],
@@ -186,8 +246,47 @@ export default function ContactsPage() {
       toast.success(`Bulk action "${action}" completed`);
       setSelected(new Set());
       refetch();
+      return true;
     } catch (err: any) {
       toast.error(err.message || "Bulk action failed");
+      return false;
+    }
+  };
+
+  const handleFollowUpSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const date = String(form.get("followUpDate") || "");
+    if (!date) return;
+    const succeeded = await handleBulkAction("set_follow_up", {
+      nextFollowUpAt: new Date(`${date}T12:00:00`).toISOString(),
+    });
+    if (succeeded) setFollowUpOpen(false);
+  };
+
+  const handleTaskSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const title = String(form.get("taskTitle") || "").trim();
+    if (!title) return;
+    const dueDate = String(form.get("taskDueDate") || "");
+    const succeeded = await handleBulkAction("create_task", {
+      task: {
+        title,
+        priority: String(form.get("taskPriority") || "medium"),
+        ...(dueDate ? { dueAt: new Date(`${dueDate}T12:00:00`).toISOString() } : {}),
+      },
+    });
+    if (succeeded) setTaskOpen(false);
+  };
+
+  const handleTagAction = async (action: "add_tags" | "remove_tags") => {
+    const tag = bulkTag.trim();
+    if (!tag) return;
+    const succeeded = await handleBulkAction(action, { tags: [tag] });
+    if (succeeded) {
+      setBulkTag("");
+      setTagOpen(false);
     }
   };
 
@@ -347,7 +446,20 @@ export default function ContactsPage() {
                     {stageFilter && stageFilter !== "all" && (
                       <li>Stage: {stageFilter}</li>
                     )}
-                    {!search && (!stageFilter || stageFilter === "all") && (
+                    {ownerFilter && ownerFilter !== "all" && (
+                      <li>Owner: {ownerFilter === "unassigned" ? "Unassigned" : ownerFilter === "me" ? "Me" : users.find((user) => user.id === ownerFilter)?.name || "Selected user"}</li>
+                    )}
+                    {tagFilter && <li>Tag: {tagFilter}</li>}
+                    {followUpFilter && followUpFilter !== "all" && (
+                      <li>Follow-up: {followUpFilter}</li>
+                    )}
+                    {marketingFilter && marketingFilter !== "all" && (
+                      <li>Marketing: {marketingFilter}</li>
+                    )}
+                    {contactMethodFilter && contactMethodFilter !== "all" && (
+                      <li>Contact method: {contactMethodFilter}</li>
+                    )}
+                    {!search && (!stageFilter || stageFilter === "all") && (!ownerFilter || ownerFilter === "all") && !tagFilter && (!followUpFilter || followUpFilter === "all") && (!marketingFilter || marketingFilter === "all") && (!contactMethodFilter || contactMethodFilter === "all") && (
                       <li>No filters applied</li>
                     )}
                   </ul>
@@ -380,7 +492,7 @@ export default function ContactsPage() {
           )}
         </div>
 
-        {/* Search + Stage Filter */}
+        {/* Search + activation filters */}
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
@@ -390,7 +502,7 @@ export default function ContactsPage() {
             className="pl-10"
           />
         </div>
-        <Select value={stageFilter} onValueChange={(v) => { setStageFilter(v); setPage(1); }}>
+        <Select value={stageFilter || "all"} onValueChange={(v) => { setStageFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="All Stages" />
           </SelectTrigger>
@@ -403,60 +515,212 @@ export default function ContactsPage() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={ownerFilter || "all"} onValueChange={(v) => { setOwnerFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Owners" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Owners</SelectItem>
+            <SelectItem value="me">My Contacts</SelectItem>
+            <SelectItem value="unassigned">Unassigned</SelectItem>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={user.id}>
+                {user.name || user.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={followUpFilter || "all"} onValueChange={(v) => { setFollowUpFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Follow-ups" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Follow-ups</SelectItem>
+            <SelectItem value="none">Not Scheduled</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
+            <SelectItem value="today">Due Today</SelectItem>
+            <SelectItem value="7days">Next 7 Days</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={tagFilter || "all"} onValueChange={(v) => { setTagFilter(v === "all" ? "" : v); setPage(1); }}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="All Tags" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tags</SelectItem>
+            <SelectItem value="Needs Review">Needs Review</SelectItem>
+            {tagFilter && tagFilter !== "Needs Review" && (
+              <SelectItem value={tagFilter}>{tagFilter}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <Select value={marketingFilter || "all"} onValueChange={(v) => { setMarketingFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="All Marketing" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Marketing</SelectItem>
+            <SelectItem value="marketable">Marketable</SelectItem>
+            <SelectItem value="suppressed">Do Not Market</SelectItem>
+            <SelectItem value="bounced">Email Bounces</SelectItem>
+            <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={contactMethodFilter || "all"} onValueChange={(v) => { setContactMethodFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Contact Methods" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Contact Methods</SelectItem>
+            <SelectItem value="both">Email and Phone</SelectItem>
+            <SelectItem value="email_only">Email Only</SelectItem>
+            <SelectItem value="phone_only">Phone Only</SelectItem>
+            <SelectItem value="none">No Contact Method</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Bulk Action Bar */}
-      {selected.size > 0 && (
+      {canEdit && selected.size > 0 && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="flex items-center gap-3 py-3 px-4">
             <span className="text-sm font-medium">
               {selected.size} selected
             </span>
             <div className="flex gap-2 flex-wrap">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const stage = prompt("Enter stage (lead, prospect, opportunity, customer, subscriber, evangelist):");
-                  if (stage) handleBulkAction("set_stage", { lifecycleStage: stage });
-                }}
-              >
-                <ArrowUpDown className="h-3 w-3 mr-1" />
-                Set Stage
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const tags = prompt("Enter tags (comma-separated):");
-                  if (tags) handleBulkAction("add_tags", { tags: tags.split(",").map((t) => t.trim()) });
-                }}
-              >
-                <Tag className="h-3 w-3 mr-1" />
-                Add Tags
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const date = prompt("Enter follow-up date (YYYY-MM-DD):");
-                  if (date) handleBulkAction("set_follow_up", { nextFollowUpAt: new Date(date).toISOString() });
-                }}
-              >
-                <Calendar className="h-3 w-3 mr-1" />
-                Set Follow-up
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const title = prompt("Enter task title:");
-                  if (title) handleBulkAction("create_task", { task: { title } });
-                }}
-              >
-                <CheckSquare className="h-3 w-3 mr-1" />
-                Create Task
-              </Button>
+              <Select onValueChange={(ownerUserId) => handleBulkAction("assign_owner", { ownerUserId })}>
+                <SelectTrigger className="h-8 w-[170px] bg-background">
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <SelectValue placeholder="Assign owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name || user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select onValueChange={(lifecycleStage) => handleBulkAction("set_stage", { lifecycleStage })}>
+                <SelectTrigger className="h-8 w-[150px] bg-background">
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                  <SelectValue placeholder="Set stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAGES.map((stage) => (
+                    <SelectItem key={stage} value={stage}>
+                      {stage.charAt(0).toUpperCase() + stage.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Dialog open={tagOpen} onOpenChange={setTagOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Tag className="h-3.5 w-3.5 mr-1" />
+                    Tag
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Update tag for {selected.size} contacts</DialogTitle>
+                  </DialogHeader>
+                  <div>
+                    <Label htmlFor="bulkTag">Tag</Label>
+                    <Input
+                      id="bulkTag"
+                      value={bulkTag}
+                      onChange={(event) => setBulkTag(event.target.value)}
+                      placeholder="Needs Review"
+                    />
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button variant="outline" disabled={!bulkTag.trim()} onClick={() => handleTagAction("remove_tags")}>
+                      Remove
+                    </Button>
+                    <Button disabled={!bulkTag.trim()} onClick={() => handleTagAction("add_tags")}>
+                      Add
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={followUpOpen} onOpenChange={setFollowUpOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Calendar className="h-3.5 w-3.5 mr-1" />
+                    Follow-up
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Schedule follow-up for {selected.size} contacts</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleFollowUpSubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="followUpDate">Follow-up date</Label>
+                      <Input id="followUpDate" name="followUpDate" type="date" required />
+                    </div>
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button type="button" variant="outline">Cancel</Button>
+                      </DialogClose>
+                      <Button type="submit">Schedule</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <CheckSquare className="h-3.5 w-3.5 mr-1" />
+                    Task
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create task for {selected.size} contacts</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleTaskSubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="taskTitle">Task title</Label>
+                      <Input id="taskTitle" name="taskTitle" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="taskDueDate">Due date</Label>
+                        <Input id="taskDueDate" name="taskDueDate" type="date" />
+                      </div>
+                      <div>
+                        <Label htmlFor="taskPriority">Priority</Label>
+                        <select
+                          id="taskPriority"
+                          name="taskPriority"
+                          defaultValue="medium"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button type="button" variant="outline">Cancel</Button>
+                      </DialogClose>
+                      <Button type="submit">Create</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
               {canDelete && (
                 <Button
                   size="sm"
@@ -515,35 +779,39 @@ export default function ContactsPage() {
       )}
 
       {/* Contact Table */}
-      <div className="rounded-md border">
-        <table className="w-full">
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[720px]">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="w-10 p-3">
-                <Checkbox
-                  checked={contacts.length > 0 && selected.size === contacts.length}
-                  onCheckedChange={toggleAll}
-                />
+                {canEdit && (
+                  <Checkbox
+                    checked={contacts.length > 0 && selected.size === contacts.length}
+                    onCheckedChange={toggleAll}
+                  />
+                )}
               </th>
               <th className="p-3 text-left text-sm font-medium">Name</th>
               <th className="p-3 text-left text-sm font-medium hidden md:table-cell">Email</th>
               <th className="p-3 text-left text-sm font-medium hidden lg:table-cell">Phone</th>
               <th className="p-3 text-left text-sm font-medium">Stage</th>
-              <th className="p-3 text-left text-sm font-medium hidden lg:table-cell">Tags</th>
+              <th className="p-3 text-left text-sm font-medium hidden lg:table-cell">Owner</th>
+              <th className="p-3 text-left text-sm font-medium hidden lg:table-cell">Follow-up</th>
+              <th className="p-3 text-left text-sm font-medium hidden xl:table-cell">Tags</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               [...Array(5)].map((_, i) => (
                 <tr key={i} className="border-b">
-                  <td colSpan={6} className="p-3">
+                  <td colSpan={8} className="p-3">
                     <div className="h-8 animate-pulse bg-muted rounded" />
                   </td>
                 </tr>
               ))
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                <td colSpan={8} className="p-8 text-center text-muted-foreground">
                   <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="font-medium">No contacts found</p>
                   <p className="text-sm mt-1">Click &ldquo;Add Contact&rdquo; above to create your first contact, or use Import to upload a CSV file.</p>
@@ -553,10 +821,12 @@ export default function ContactsPage() {
               contacts.map((c: any) => (
                 <tr key={c.id} className="border-b hover:bg-muted/50 transition-colors">
                   <td className="p-3">
-                    <Checkbox
-                      checked={selected.has(c.id)}
-                      onCheckedChange={() => toggleSelect(c.id)}
-                    />
+                    {canEdit && (
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        onCheckedChange={() => toggleSelect(c.id)}
+                      />
+                    )}
                   </td>
                   <td className="p-3">
                     <Link
@@ -577,7 +847,19 @@ export default function ContactsPage() {
                       {c.lifecycleStage}
                     </Badge>
                   </td>
-                  <td className="p-3 hidden lg:table-cell">
+                  <td className="p-3 text-sm hidden lg:table-cell">
+                    {c.owner?.name || c.owner?.email || <span className="text-muted-foreground">Unassigned</span>}
+                  </td>
+                  <td className="p-3 text-sm hidden lg:table-cell">
+                    {c.nextFollowUpAt ? (
+                      <span className={new Date(c.nextFollowUpAt) < new Date() ? "text-destructive" : "text-muted-foreground"}>
+                        {new Date(c.nextFollowUpAt).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Not scheduled</span>
+                    )}
+                  </td>
+                  <td className="p-3 hidden xl:table-cell">
                     <div className="flex gap-1 flex-wrap">
                       {c.tags?.slice(0, 3).map((t: string) => (
                         <Badge key={t} variant="outline" className="text-xs">

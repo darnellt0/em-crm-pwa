@@ -60,6 +60,17 @@ describe("API route authorization policy", () => {
     }
   });
 
+  it("keeps Campaign Studio sync routes behind their dedicated token", () => {
+    for (const relativePath of [
+      "internal/campaign-sync/contacts/route.ts",
+      "internal/campaign-sync/events/route.ts",
+    ]) {
+      const source = readFileSync(`src/app/api/${relativePath}`, "utf8");
+      expect(source).toContain("requireCampaignSyncToken");
+      expect(source).not.toContain("requireInternalToken");
+    }
+  });
+
   it("keeps agent proposal routes behind the separate write token", () => {
     const source = readFileSync("src/app/api/internal/agent-actions/route.ts", "utf8");
     expect(source).toContain("requireAgentWriteToken");

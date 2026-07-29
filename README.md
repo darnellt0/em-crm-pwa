@@ -100,7 +100,15 @@ Copy `.env.example` to `.env.local` and configure:
 | `EMAIL_FROM` | Sender email address |
 | `OLLAMA_URL` | Ollama API URL (default: `http://127.0.0.1:11434`) |
 | `INTERNAL_SERVICE_TOKEN` | Read/internal token for the embedding worker and limited OpenClaw reads |
+| `CAMPAIGN_STUDIO_SYNC_TOKEN` | Dedicated token accepted only by Campaign Studio synchronization endpoints |
+| `CAMPAIGN_SYNC_DEFAULT_OWNER_EMAIL` | Optional CRM user assigned to contacts first created by Campaign Studio |
 | `OPENCLAW_WRITE_TOKEN` | Separate token that can submit validated OpenClaw proposals but cannot execute them |
+
+## Campaign Studio Integration
+
+The CRM exposes dedicated token-authenticated endpoints at `/api/internal/campaign-sync/contacts` and `/api/internal/campaign-sync/events`. Configure `CAMPAIGN_STUDIO_SYNC_TOKEN` here with the same long random value used for `CRM_SYNC_TOKEN` in Campaign Studio. Do not reuse `INTERNAL_SERVICE_TOKEN` or `OPENCLAW_WRITE_TOKEN`.
+
+Campaign Studio incrementally reads relationship fields from CRM and sends opted-in contacts plus campaign events back. Event IDs are stored in `CampaignSyncReceipt`, making event retries idempotent. Bounce, complaint, and unsubscribe events add `Do Not Market` tags and stop follow-up activity in CRM. Set `CAMPAIGN_SYNC_DEFAULT_OWNER_EMAIL` when contacts created by Campaign Studio should automatically belong to a specific CRM user.
 
 ## Role Hierarchy
 
