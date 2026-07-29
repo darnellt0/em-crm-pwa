@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function VerifyRequestPage() {
+  const mailPreviewUrl = process.env.NEXT_PUBLIC_MAIL_PREVIEW_URL?.trim();
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-50 to-purple-100 p-4">
       <Card className="w-full max-w-md shadow-lg">
@@ -20,21 +22,23 @@ export default function VerifyRequestPage() {
           <p className="text-gray-600">
             A sign-in link has been sent to your email address.
           </p>
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 text-left space-y-1">
-            <p className="font-semibold">Running locally?</p>
-            <p>
-              MailHog catches all outgoing emails. Open{" "}
-              <a
-                href="http://localhost:8025"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline font-medium"
-              >
-                http://localhost:8025
-              </a>{" "}
-              to find your magic link.
-            </p>
-          </div>
+          {mailPreviewUrl ? (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 text-left space-y-1">
+              <p className="font-semibold">Running locally?</p>
+              <p>
+                MailHog catches all outgoing emails. Open{" "}
+                <a
+                  href={mailPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-medium"
+                >
+                  the local inbox
+                </a>{" "}
+                to find your magic link.
+              </p>
+            </div>
+          ) : null}
           <Button variant="outline" asChild className="w-full">
             <Link href="/auth/signin">Back to sign in</Link>
           </Button>

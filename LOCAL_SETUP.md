@@ -40,6 +40,8 @@ Open `.env.local` and update the following:
    - If Ollama is running on your host machine (Windows/Mac), use `http://host.docker.internal:11434`
    - If Ollama is running directly in WSL or Linux, use `http://127.0.0.1:11434`
 
+For daily production use, leave the local SMTP values in place until you have a Google app password, then follow `GMAIL_SMTP_SETUP.md`. Do not put a normal Google account password in the environment file.
+
 ## Step 3: Start Infrastructure (Docker)
 
 Start the PostgreSQL database, pgvector, MailHog (for emails), and n8n:
@@ -108,6 +110,8 @@ pnpm build
 pnpm start
 ```
 MailHog is a shared development inbox, not a production email service. For daily remote use, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` for a real SMTP provider, then remove `NEXT_PUBLIC_MAIL_PREVIEW_URL`.
+
+For Gmail or Google Workspace on the Windows production host, use `pnpm email:configure:gmail`. It verifies delivery before restarting and automatically restores the previous configuration on failure.
 
 Do not expose ports 5434, 5678, 8025, or 1025 to the public internet. Use Tailscale or another private network for multi-device access.
 
