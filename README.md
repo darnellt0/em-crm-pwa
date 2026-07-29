@@ -104,6 +104,16 @@ Copy `.env.example` to `.env.local` and configure:
 | `CAMPAIGN_SYNC_DEFAULT_OWNER_EMAIL` | Optional CRM user assigned to contacts first created by Campaign Studio |
 | `OPENCLAW_WRITE_TOKEN` | Separate token that can submit validated OpenClaw proposals but cannot execute them |
 
+## Production Email Delivery
+
+Local development sends magic links to MailHog. To switch the Windows production instance to Gmail or Google Workspace, first create a Google app password for the sender account, then run this from PowerShell:
+
+```powershell
+pnpm email:configure:gmail
+```
+
+The command prompts for the app password without displaying it, writes the Gmail SMTP settings to the ignored `.env.local` file, verifies a real test message, rebuilds the app, and restarts the scheduled production service. A failed verification or restart restores the prior MailHog configuration. See [GMAIL_SMTP_SETUP.md](GMAIL_SMTP_SETUP.md) for prerequisites and troubleshooting.
+
 ## Campaign Studio Integration
 
 The CRM exposes dedicated token-authenticated endpoints at `/api/internal/campaign-sync/contacts` and `/api/internal/campaign-sync/events`. Configure `CAMPAIGN_STUDIO_SYNC_TOKEN` here with the same long random value used for `CRM_SYNC_TOKEN` in Campaign Studio. Do not reuse `INTERNAL_SERVICE_TOKEN` or `OPENCLAW_WRITE_TOKEN`.
