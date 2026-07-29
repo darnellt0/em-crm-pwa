@@ -63,14 +63,25 @@ def main():
     # Icon specifications
     icons = [
         (192, os.path.join(project_root, 'icon-192.png')),
-        (512, os.path.join(project_root, 'icon-512.png'))
+        (512, os.path.join(project_root, 'icon-512.png')),
+        (192, os.path.join(project_root, 'public', 'icon-192.png')),
+        (512, os.path.join(project_root, 'public', 'icon-512.png')),
     ]
+
+    os.makedirs(os.path.join(project_root, 'public'), exist_ok=True)
 
     print("Generating PWA icons for Elevated Movements CRM...")
 
     try:
         for size, path in icons:
             create_icon(size, path)
+
+        with Image.open(os.path.join(project_root, 'public', 'icon-192.png')) as icon:
+            icon.save(
+                os.path.join(project_root, 'public', 'favicon.ico'),
+                format='ICO',
+                sizes=[(16, 16), (32, 32), (48, 48)],
+            )
 
         print("\n[OK] All icons generated successfully!")
         return 0
