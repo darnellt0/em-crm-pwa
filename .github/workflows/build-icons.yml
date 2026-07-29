@@ -24,20 +24,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install Pillow==11.3.0
 
-    - name: Generate icons
-      run: python tools/make_icons.py
-
-    - name: Verify icons are committed
-      run: |
-        if [[ -n $(git status --porcelain) ]]; then
-          echo "ERROR: Generated icons differ from committed versions!"
-          echo "Please run 'python tools/make_icons.py' and commit the icons."
-          git status
-          git diff
-          exit 1
-        else
-          echo "SUCCESS: Icons are up to date!"
-        fi
-
-    - name: Verify icon sizes
+    # Icon generation uses locally installed fonts, so regeneration is not
+    # byte-for-byte portable between Windows and Linux runners.
+    - name: Verify committed icon integrity and dimensions
       run: python tools/verify_icons.py
