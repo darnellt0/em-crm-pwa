@@ -84,6 +84,7 @@ Copy `.env.example` to `.env.local` and configure:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
+| `CRM_PRIVATE_BIND_IP` | Host IP allowed to serve the temporary MailHog UI; default `127.0.0.1` |
 | `NEXTAUTH_SECRET` | Random secret for session encryption |
 | `NEXTAUTH_URL` | Canonical app URL (e.g., `http://localhost:3001` or a private Tailscale address) |
 | `NEXT_PUBLIC_MAIL_PREVIEW_URL` | Optional MailHog URL shown only for local testing; remove when using real SMTP |

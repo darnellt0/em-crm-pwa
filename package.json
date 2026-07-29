@@ -6,6 +6,8 @@
     "dev": "next dev --hostname 0.0.0.0 --port 3001",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 3001",
+    "start:production": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/start-production.ps1",
+    "health:production": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/check-production.ps1",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
@@ -14,6 +16,8 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
     "backup:db": "bash scripts/backup.sh",
+    "backup:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-backup.ps1",
+    "ops:install": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/install-operations-tasks.ps1",
     "restore:db": "bash scripts/restore.sh",
     "verify": "bash scripts/verify.sh",
     "postinstall": "prisma generate"
