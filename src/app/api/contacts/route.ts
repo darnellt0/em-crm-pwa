@@ -15,11 +15,22 @@ export async function GET(req: NextRequest) {
     const owner = url.searchParams.get("owner") || "";
     const tag = url.searchParams.get("tag") || "";
     const followUp = url.searchParams.get("followUp") || "";
+    const marketing = url.searchParams.get("marketing") || "";
+    const contactMethod = url.searchParams.get("contactMethod") || "";
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
     const skip = (page - 1) * limit;
 
-    const where = buildContactWhere({ q, stage, owner, tag, followUp, userId });
+    const where = buildContactWhere({
+      q,
+      stage,
+      owner,
+      tag,
+      followUp,
+      marketing,
+      contactMethod,
+      userId,
+    });
 
     const [items, total] = await Promise.all([
       prisma.contact.findMany({

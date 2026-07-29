@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useApi, apiPost } from "@/hooks/useApi";
@@ -78,8 +78,10 @@ export default function ContactsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("");
-  const [reviewFilter, setReviewFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [followUpFilter, setFollowUpFilter] = useState("");
+  const [marketingFilter, setMarketingFilter] = useState("");
+  const [contactMethodFilter, setContactMethodFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -98,8 +100,10 @@ export default function ContactsPage() {
     setSearch(initial.get("q") || "");
     setStageFilter(initial.get("stage") || "");
     setOwnerFilter(initial.get("owner") || "");
-    setReviewFilter(initial.get("tag") === "Needs Review" ? "needs-review" : "");
+    setTagFilter(initial.get("tag") || "");
     setFollowUpFilter(initial.get("followUp") || "");
+    setMarketingFilter(initial.get("marketing") || "");
+    setContactMethodFilter(initial.get("contactMethod") || "");
   }, []);
 
   // Fetch saved views for contacts
@@ -108,14 +112,16 @@ export default function ContactsPage() {
   );
   const savedViews: SavedView[] = viewsData?.views || [];
   const { data: usersData } = useApi<any>(canEdit ? "/api/users" : null);
-  const users: CRMUser[] = usersData?.users || [];
+  const users: CRMUser[] = useMemo(() => usersData?.users || [], [usersData]);
 
   const params = new URLSearchParams();
   if (search) params.set("q", search);
   if (stageFilter && stageFilter !== "all") params.set("stage", stageFilter);
   if (ownerFilter && ownerFilter !== "all") params.set("owner", ownerFilter);
-  if (reviewFilter === "needs-review") params.set("tag", "Needs Review");
+  if (tagFilter) params.set("tag", tagFilter);
   if (followUpFilter && followUpFilter !== "all") params.set("followUp", followUpFilter);
+  if (marketingFilter && marketingFilter !== "all") params.set("marketing", marketingFilter);
+  if (contactMethodFilter && contactMethodFilter !== "all") params.set("contactMethod", contactMethodFilter);
   params.set("page", String(page));
   params.set("limit", String(pageSize));
 
@@ -136,12 +142,22 @@ export default function ContactsPage() {
     else setStageFilter("");
     if (filters.owner) setOwnerFilter(filters.owner);
     else setOwnerFilter("");
-    if (filters.tag === "Needs Review") setReviewFilter("needs-review");
-    else setReviewFilter("");
-    if (filters.followUp) setFollowUpFilter(filters.followUp);
+    const legacyTags = Array.isArray(filters.tags) ? filters.tags : [];
+    setTagFilter(filters.tag || legacyTags[0] || "");
+    if (filters.followUp || filters.nextFollowUpAt) setFollowUpFilter(filters.followUp || filters.nextFollowUpAt);
     else setFollowUpFilter("");
+    if (filters.marketing) setMarketingFilter(filters.marketing);
+    else if (legacyTags.includes("Do Not Market")) setMarketingFilter("suppressed");
+    else if (legacyTags.includes("Email Bounce")) setMarketingFilter("bounced");
+    else setMarketingFilter("");
+    if (filters.contactMethod || filters.phoneOnly) setContactMethodFilter(filters.contactMethod || "phone_only");
+    else setContactMethodFilter("");
+    if (!filters.owner && filters.ownerEmail) {
+      const matchedOwner = users.find((user) => user.email === filters.ownerEmail);
+      setOwnerFilter(matchedOwner?.id || "");
+    }
     setPage(1);
-  }, []);
+  }, [users]);
 
   // Clear active view
   const clearView = useCallback(() => {
@@ -149,8 +165,10 @@ export default function ContactsPage() {
     setSearch("");
     setStageFilter("");
     setOwnerFilter("");
-    setReviewFilter("");
+    setTagFilter("");
     setFollowUpFilter("");
+    setMarketingFilter("");
+    setContactMethodFilter("");
     setPage(1);
   }, []);
 
@@ -169,8 +187,10 @@ export default function ContactsPage() {
           ...(search ? { search } : {}),
           ...(stageFilter && stageFilter !== "all" ? { stage: stageFilter } : {}),
           ...(ownerFilter && ownerFilter !== "all" ? { owner: ownerFilter } : {}),
-          ...(reviewFilter === "needs-review" ? { tag: "Needs Review" } : {}),
+          ...(tagFilter ? { tag: tagFilter } : {}),
           ...(followUpFilter && followUpFilter !== "all" ? { followUp: followUpFilter } : {}),
+          ...(marketingFilter && marketingFilter !== "all" ? { marketing: marketingFilter } : {}),
+          ...(contactMethodFilter && contactMethodFilter !== "all" ? { contactMethod: contactMethodFilter } : {}),
         },
         sort: [],
         columns: [],
@@ -429,11 +449,17 @@ export default function ContactsPage() {
                     {ownerFilter && ownerFilter !== "all" && (
                       <li>Owner: {ownerFilter === "unassigned" ? "Unassigned" : ownerFilter === "me" ? "Me" : users.find((user) => user.id === ownerFilter)?.name || "Selected user"}</li>
                     )}
-                    {reviewFilter === "needs-review" && <li>Review: Needs Review</li>}
+                    {tagFilter && <li>Tag: {tagFilter}</li>}
                     {followUpFilter && followUpFilter !== "all" && (
                       <li>Follow-up: {followUpFilter}</li>
                     )}
-                    {!search && (!stageFilter || stageFilter === "all") && (!ownerFilter || ownerFilter === "all") && !reviewFilter && (!followUpFilter || followUpFilter === "all") && (
+                    {marketingFilter && marketingFilter !== "all" && (
+                      <li>Marketing: {marketingFilter}</li>
+                    )}
+                    {contactMethodFilter && contactMethodFilter !== "all" && (
+                      <li>Contact method: {contactMethodFilter}</li>
+                    )}
+                    {!search && (!stageFilter || stageFilter === "all") && (!ownerFilter || ownerFilter === "all") && !tagFilter && (!followUpFilter || followUpFilter === "all") && (!marketingFilter || marketingFilter === "all") && (!contactMethodFilter || contactMethodFilter === "all") && (
                       <li>No filters applied</li>
                     )}
                   </ul>
@@ -516,13 +542,40 @@ export default function ContactsPage() {
             <SelectItem value="7days">Next 7 Days</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={reviewFilter || "all"} onValueChange={(v) => { setReviewFilter(v); setPage(1); }}>
+        <Select value={tagFilter || "all"} onValueChange={(v) => { setTagFilter(v === "all" ? "" : v); setPage(1); }}>
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="All Reviews" />
+            <SelectValue placeholder="All Tags" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Reviews</SelectItem>
-            <SelectItem value="needs-review">Needs Review</SelectItem>
+            <SelectItem value="all">All Tags</SelectItem>
+            <SelectItem value="Needs Review">Needs Review</SelectItem>
+            {tagFilter && tagFilter !== "Needs Review" && (
+              <SelectItem value={tagFilter}>{tagFilter}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <Select value={marketingFilter || "all"} onValueChange={(v) => { setMarketingFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="All Marketing" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Marketing</SelectItem>
+            <SelectItem value="marketable">Marketable</SelectItem>
+            <SelectItem value="suppressed">Do Not Market</SelectItem>
+            <SelectItem value="bounced">Email Bounces</SelectItem>
+            <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={contactMethodFilter || "all"} onValueChange={(v) => { setContactMethodFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Contact Methods" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Contact Methods</SelectItem>
+            <SelectItem value="both">Email and Phone</SelectItem>
+            <SelectItem value="email_only">Email Only</SelectItem>
+            <SelectItem value="phone_only">Phone Only</SelectItem>
+            <SelectItem value="none">No Contact Method</SelectItem>
           </SelectContent>
         </Select>
       </div>

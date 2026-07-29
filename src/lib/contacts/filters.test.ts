@@ -29,6 +29,34 @@ describe("buildContactWhere", () => {
     expect(buildContactWhere({ followUp: "none", userId, now })).toEqual({ nextFollowUpAt: null });
   });
 
+  it("supports marketing suppression queues", () => {
+    expect(buildContactWhere({ marketing: "suppressed", userId, now })).toEqual({
+      AND: [{ tags: { has: "Do Not Market" } }],
+    });
+    expect(buildContactWhere({ marketing: "marketable", userId, now })).toEqual({
+      NOT: { tags: { has: "Do Not Market" } },
+    });
+    expect(buildContactWhere({ marketing: "bounced", userId, now })).toMatchObject({
+      AND: [
+        {
+          OR: [
+            { tags: { has: "Email Bounce" } },
+            { source: { contains: "Email Bounces", mode: "insensitive" } },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("supports contact-method queues alongside marketing filters", () => {
+    expect(
+      buildContactWhere({ marketing: "marketable", contactMethod: "phone_only", userId, now })
+    ).toEqual({
+      NOT: { tags: { has: "Do Not Market" } },
+      AND: [{ phone: { not: null } }, { email: null }],
+    });
+  });
+
   it("builds a bounded seven-day follow-up queue", () => {
     const where = buildContactWhere({ followUp: "7days", userId, now });
     expect(where.nextFollowUpAt).toEqual({

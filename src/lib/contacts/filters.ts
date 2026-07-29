@@ -6,6 +6,8 @@ export interface ContactFilterInput {
   owner?: string;
   tag?: string;
   followUp?: string;
+  marketing?: string;
+  contactMethod?: string;
   userId: string;
   now?: Date;
 }
@@ -16,10 +18,13 @@ export function buildContactWhere({
   owner = "",
   tag = "",
   followUp = "",
+  marketing = "",
+  contactMethod = "",
   userId,
   now = new Date(),
 }: ContactFilterInput): Prisma.ContactWhereInput {
   const where: Prisma.ContactWhereInput = {};
+  const and: Prisma.ContactWhereInput[] = [];
 
   if (q) {
     where.OR = [
@@ -35,6 +40,42 @@ export function buildContactWhere({
   else if (owner === "me") where.ownerUserId = userId;
   else if (owner) where.ownerUserId = owner;
   if (tag) where.tags = { has: tag };
+
+  if (marketing === "bounced") {
+    and.push(
+      {
+        OR: [
+          { tags: { has: "Email Bounce" } },
+          { source: { contains: "Email Bounces", mode: "insensitive" } },
+        ],
+      },
+    );
+  } else if (marketing === "unsubscribed") {
+    and.push(
+      {
+        OR: [
+          { tags: { has: "Unsubscribed" } },
+          { source: { contains: "Mailchimp Unsubscribed", mode: "insensitive" } },
+        ],
+      },
+    );
+  } else if (marketing === "suppressed") {
+    and.push({ tags: { has: "Do Not Market" } });
+  } else if (marketing === "marketable") {
+    where.NOT = { tags: { has: "Do Not Market" } };
+  }
+
+  if (contactMethod === "phone_only") {
+    and.push({ phone: { not: null } }, { email: null });
+  } else if (contactMethod === "email_only") {
+    and.push({ email: { not: null } }, { phone: null });
+  } else if (contactMethod === "both") {
+    and.push({ email: { not: null } }, { phone: { not: null } });
+  } else if (contactMethod === "none") {
+    and.push({ email: null }, { phone: null });
+  }
+
+  if (and.length > 0) where.AND = and;
 
   if (followUp === "none") {
     where.nextFollowUpAt = null;
