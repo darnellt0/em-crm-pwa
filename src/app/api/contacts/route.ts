@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
+import { handleAuthError } from "@/lib/auth/requireRole";
+import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
 import { CreateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
 import { buildContactWhere } from "@/lib/contacts/filters";
@@ -8,7 +9,7 @@ import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId } = await requireRole("read_only");
+    const { userId } = await requireUserOrInternalToken(req, "read_only");
     const url = req.nextUrl;
     const q = url.searchParams.get("q") || "";
     const stage = url.searchParams.get("stage") || "";
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole("staff");
+    await requireUserOrInternalToken(req, "staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateContactSchema.safeParse(body);
     if (!parsed.success) {

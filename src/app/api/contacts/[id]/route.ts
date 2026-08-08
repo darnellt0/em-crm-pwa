@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
+import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
 import { UpdateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireRole("read_only");
+    await requireUserOrInternalToken(req, "read_only");
     const contact = await prisma.contact.findUnique({
       where: { id: (await params).id },
       include: {
@@ -60,7 +61,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireRole("staff");
+    await requireUserOrInternalToken(req, "staff");
     const body = await req.json().catch(() => ({}));
     const parsed = UpdateContactSchema.safeParse(body);
     if (!parsed.success) {
