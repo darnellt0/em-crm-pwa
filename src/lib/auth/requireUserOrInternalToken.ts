@@ -15,7 +15,7 @@ import { requireRole, type Role } from "./requireRole";
 export async function requireUserOrInternalToken(
   req: NextRequest,
   minimumRole: Role
-): Promise<{ userId: string; role: Role; name: string; email: string }> {
+): Promise<{ userId: string; role: Role; name: string | null; email: string }> {
   const token = req.headers.get("x-internal-token")?.trim();
   const expected = process.env.INTERNAL_SERVICE_TOKEN?.trim();
 
