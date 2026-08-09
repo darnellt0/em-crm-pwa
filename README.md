@@ -204,15 +204,40 @@ The import follows a 5-step staged workflow:
 
 ---
 
-## Legacy PWA Distribution
+## Build EM CRM App (Capacitor)
 
-The original repository provided PWA assets for the Google Apps Script version of the CRM. These files remain for historical compatibility:
+The supported Android/iOS client is in `mobile/`. It is a new Capacitor 8 shell
+for the current Next.js/Auth.js CRM at
+`https://crm.elevatedmovements.com`; it does not restore the retired Google Apps
+Script wrapper.
 
-- **manifest.json** — PWA manifest for the Apps Script web app
-- **icon-192.png / icon-512.png** — App icons
-- **tools/** — Icon generation scripts
+```powershell
+cd mobile
+npm install
+npm run build
 
-The unsupported Capacitor wrapper has been retired. It targeted the former Google Apps Script deployment and does not match the current Next.js application, Auth.js authentication, or application routes. If native distribution is revisited, create a new integration against the current deployed CRM rather than restoring the legacy wrapper.
+# Create each platform once, if its directory is not already present:
+npm run add:android
+npm run add:ios       # macOS only
+
+npm run assets
+npm run sync
+npm run open:android
+npm run open:ios      # macOS only
+```
+
+Use `npm run sync:android` on Windows when the iOS project has not been created.
+If a platform already exists, run its sync command instead of its add command.
+
+The app uses `com.elevatedmovements.crm`, displays as **EM CRM**, allows only the
+canonical HTTPS CRM origin, and preserves Auth.js rather than embedding secrets
+or bypassing authentication. Verified HTTPS magic-link handoff additionally
+requires the public Android signing fingerprint and Apple Team ID. See
+[`mobile/README.md`](mobile/README.md) and
+[`mobile/ASSOCIATED_LINKS.md`](mobile/ASSOCIATED_LINKS.md).
+
+The root-level `manifest.json` and duplicate icons remain only as historical PWA
+assets; the deployed web manifest is `public/manifest.json`.
 
 ## License
 

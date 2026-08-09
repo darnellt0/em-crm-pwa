@@ -41,7 +41,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="crm-shell flex overflow-hidden bg-background">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

@@ -58,9 +58,7 @@ ENV/
 
 # mobile
 mobile/node_modules
-mobile/.gradle
-mobile/android
-mobile/ios
+mobile/www
 
 # Backups
 backups/

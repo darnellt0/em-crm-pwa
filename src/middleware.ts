@@ -35,8 +35,9 @@ export const config = {
      * - /api/*         (all API routes — handle auth themselves)
      * - /auth/*        (sign-in / verify pages)
      * - /_next/*       (Next.js internals)
+     * - /.well-known/* (public mobile-app association documents)
      * - static assets  (favicon, manifest, icons, sw.js)
      */
-    "/((?!api|auth|_next/static|_next/image|favicon.ico|manifest.json|icon-|icons|sw.js).*)",
+    "/((?!api|auth|_next/static|_next/image|favicon.ico|manifest.json|icon-|icons|sw.js|\\.well-known).*)",
   ],
 };
