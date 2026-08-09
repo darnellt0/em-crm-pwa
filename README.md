@@ -204,16 +204,15 @@ The import follows a 5-step staged workflow:
 
 ---
 
-## Legacy: PWA & Mobile Distribution
+## Legacy PWA Distribution
 
-The original repository provided PWA assets and a Capacitor mobile wrapper for the Google Apps Script version of the CRM. Those files remain in the repository for reference:
+The original repository provided PWA assets for the Google Apps Script version of the CRM. These files remain for historical compatibility:
 
 - **manifest.json** — PWA manifest for the Apps Script web app
 - **icon-192.png / icon-512.png** — App icons
-- **mobile/** — Capacitor native app wrapper
 - **tools/** — Icon generation scripts
 
-See the `mobile/README.md` for the original Capacitor setup instructions.
+The unsupported Capacitor wrapper has been retired. It targeted the former Google Apps Script deployment and does not match the current Next.js application, Auth.js authentication, or application routes. If native distribution is revisited, create a new integration against the current deployed CRM rather than restoring the legacy wrapper.
 
 ## License
 
