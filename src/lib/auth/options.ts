@@ -9,6 +9,7 @@ import {
   readSmtpConfig,
 } from "@/lib/email/smtp";
 import {
+  canSignInWithEmail,
   getConfiguredRole,
   isEmailAllowed,
   normalizeEmail,
@@ -59,17 +60,7 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user }) {
-      if (!user.email || !isEmailAllowed(user.email)) return false;
-
-      if (user.id) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            email: normalizeEmail(user.email),
-          },
-        });
-      }
-      return true;
+      return canSignInWithEmail(user.email);
     },
     async jwt({ token, user }) {
       if (user) {

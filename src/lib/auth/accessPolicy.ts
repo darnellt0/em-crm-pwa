@@ -32,6 +32,13 @@ export function isEmailAllowed(email: string, env: NodeJS.ProcessEnv = process.e
   return getAllowedEmails(env).has(normalizeEmail(email));
 }
 
+export function canSignInWithEmail(
+  email: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env
+) {
+  return Boolean(email && isEmailAllowed(email, env));
+}
+
 export function getConfiguredRole(
   email: string,
   env: NodeJS.ProcessEnv = process.env

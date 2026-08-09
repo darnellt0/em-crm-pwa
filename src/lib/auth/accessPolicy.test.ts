@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canSignInWithEmail,
   getAllowedEmails,
   getConfiguredRole,
   isEmailAllowed,
@@ -33,6 +34,16 @@ describe("accessPolicy", () => {
     expect(isEmailAllowed("staff@example.com", env)).toBe(true);
     expect(isEmailAllowed("invite@example.com", env)).toBe(true);
     expect(isEmailAllowed("unknown@example.com", env)).toBe(false);
+  });
+
+  it("allows a configured first-time email without requiring a persisted user", () => {
+    const env = {
+      ADMIN_EMAILS: "main@elevatedmovements.com",
+    } as NodeJS.ProcessEnv;
+
+    expect(canSignInWithEmail("main@elevatedmovements.com", env)).toBe(true);
+    expect(canSignInWithEmail("unknown@elevatedmovements.com", env)).toBe(false);
+    expect(canSignInWithEmail(null, env)).toBe(false);
   });
 
   it("uses the highest configured role and defaults invitations to staff", () => {
