@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
+import { handleAuthError } from "@/lib/auth/requireRole";
+import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
 import { CreateInteractionSchema } from "@/lib/validations/interaction";
 import { extractMemoryProposals } from "@/lib/ai/ollama";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireRole("staff");
+    const { userId } = await requireUserOrInternalToken(req, "staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateInteractionSchema.safeParse(body);
     if (!parsed.success) {
