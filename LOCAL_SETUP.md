@@ -7,7 +7,8 @@ This guide covers how to set up the Elevated Movements CRM for local daily use o
 1. **Docker Desktop** (Make sure WSL2 integration is enabled if on Windows)
 2. **Node.js 20+** (We recommend using `nvm` or `nvm-windows`)
 3. **pnpm** (`npm install -g pnpm`)
-4. *(Optional)* **Ollama** installed on your host machine for AI features
+4. **Bash** (Git for Windows or WSL on Windows) for backup and restore scripts
+5. *(Optional)* **Ollama** installed on your host machine for AI features
 
 ## Step 1: Clone and Install
 
@@ -16,7 +17,7 @@ Open your terminal (WSL on Windows) and run:
 ```bash
 git clone https://github.com/darnellt0/em-crm-pwa.git
 cd em-crm-pwa
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 ## Step 2: Environment Variables
@@ -24,10 +25,10 @@ pnpm install
 Copy the example environment file:
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
-Open `.env.local` and update the following:
+Open `.env` and update the following:
 
 1. **`NEXTAUTH_SECRET`**: Generate a secure random string. You can run `openssl rand -base64 32` in your terminal and paste the result here.
 2. **`INTERNAL_SERVICE_TOKEN`**: Generate another random string for internal API calls (like the embedding worker).
@@ -39,6 +40,11 @@ Open `.env.local` and update the following:
 8. **`OLLAMA_URL`**:
    - If Ollama is running on your host machine (Windows/Mac), use `http://host.docker.internal:11434`
    - If Ollama is running directly in WSL or Linux, use `http://127.0.0.1:11434`
+
+The ignored `.env.local` file is optional. Next.js and `pnpm verify` load it
+after `.env` for machine-specific application overrides, but Docker Compose
+does not read it. Keep Compose settings such as `CRM_POSTGRES_PORT` and
+`CRM_PRIVATE_BIND_IP` in `.env`.
 
 For daily production use, leave the local SMTP values in place until you have a Google app password, then follow `GMAIL_SMTP_SETUP.md`. Do not put a normal Google account password in the environment file.
 
@@ -95,7 +101,7 @@ pnpm verify
 The CRM runs on a single host machine and shares one database. For a second person (e.g. Shria) to use the same instance from another computer:
 
 1. **Connect both machines to the same network.** The simplest safe option is [Tailscale](https://tailscale.com) (free for personal use) — install it on both machines and note the host machine's Tailscale name or IP (e.g. `main-pc.tailnet-name.ts.net` or `100.x.y.z`). Being on the same home/office Wi-Fi also works; use the host's LAN IP.
-2. **Point `NEXTAUTH_URL` at the shared address.** In `.env.local` on the host, set:
+2. **Point `NEXTAUTH_URL` at the shared address.** In `.env` on the host, set:
    ```
    NEXTAUTH_URL="http://<host-address>:3001"
    ```
@@ -162,3 +168,5 @@ pnpm backup:verify
 - **Magic link fails or redirects to sign-in**: Ensure `NEXTAUTH_URL` exactly matches the URL you are visiting, including host and port.
 - **Ollama connection refused**: Ensure Ollama is running and the `OLLAMA_URL` is correct for your environment. If using WSL, you may need to set `OLLAMA_HOST=0.0.0.0` in your Windows environment variables so WSL can reach it.
 - **Database connection errors**: Ensure Docker Desktop is running and the `em_postgres` container is healthy.
+- **`pnpm verify` says the app is unavailable**: Start `pnpm dev` (or the production task) first, then run verification from a second terminal.
+- **Prisma reports `EPERM` while reinstalling on Windows**: The running production server has the Prisma engine DLL open. Stop only the CRM task with `Stop-ScheduledTask -TaskName ElevatedMovementsCRM`, rerun `pnpm install --frozen-lockfile`, then restore service with `Start-ScheduledTask -TaskName ElevatedMovementsCRM`.

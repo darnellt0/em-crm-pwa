@@ -21,7 +21,7 @@ AI-powered Contact Relationship Management system built with Next.js 15, Prisma,
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 14 (App Router) |
+| Framework | Next.js 15 (App Router) |
 | Database | PostgreSQL 16 + pgvector |
 | ORM | Prisma |
 | Auth | Auth.js (NextAuth v4) with Email Provider |
@@ -44,30 +44,51 @@ AI-powered Contact Relationship Management system built with Next.js 15, Prisma,
 git clone https://github.com/darnellt0/em-crm-pwa.git
 cd em-crm-pwa
 
-# 2. Copy environment variables
-cp .env.example .env.local
-# Edit .env.local with your SMTP credentials and secrets
+# 2. Create the canonical local environment file
+cp .env.example .env
+# Edit .env with your local credentials, allowlists, and secrets
 
-# 3. Start infrastructure (PostgreSQL + MailHog + n8n)
+# 3. Install dependencies and generate the Prisma client
+pnpm install --frozen-lockfile
+
+# 4. Start infrastructure (PostgreSQL + MailHog + n8n)
 docker compose up -d
-
-# 4. Install dependencies
-pnpm install
 
 # 5. Run database migrations and seed users
 pnpm db:push
 pnpm db:seed
 
-# 6. Verify setup
-pnpm verify
-
-# 7. Start development server
+# 6. Start the development server
 pnpm dev
+
+# 7. In another terminal, verify the running system
+pnpm verify
 ```
 
 Open the URL configured in `NEXTAUTH_URL` and sign in with an allowlisted email. For local development, check MailHog at the URL configured in `NEXT_PUBLIC_MAIL_PREVIEW_URL`.
 
 For Day 1 operating instructions, local backup, and import verification, see `docs/day-1-runbook.md`.
+
+`.env` is canonical because Docker Compose and Prisma load it directly. Next.js
+also loads an optional ignored `.env.local` file for machine-specific application
+overrides; `pnpm verify` applies the same override order. Docker Compose does not
+read `.env.local`.
+
+### Quality Gates
+
+`pnpm verify` checks Compose, PostgreSQL/pgvector, seeded admin access, Prisma,
+TypeScript, ESLint, unit tests, the sign-in page, and protected API responses.
+Docker infrastructure and the app must already be running. Ollama is checked but
+remains optional.
+
+Run the production build separately when changing application code:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
 
 ### Service URLs
 
@@ -79,7 +100,8 @@ For Day 1 operating instructions, local backup, and import verification, see `do
 
 ## Environment Variables
 
-Copy `.env.example` to `.env.local` and configure:
+Copy `.env.example` to `.env` and configure it. Use `.env.local` only for
+optional Next.js/verifier overrides that should not affect Docker Compose:
 
 | Variable | Description |
 |----------|-------------|
@@ -151,7 +173,7 @@ If you want to use AI features:
    ollama pull qwen2.5:7b-instruct
    ollama pull nomic-embed-text
    ```
-3. Ensure `OLLAMA_URL` in `.env.local` points to your Ollama instance.
+3. Ensure `OLLAMA_URL` in `.env` (or an optional `.env.local` override) points to your Ollama instance.
 
 ## Embedding Worker
 

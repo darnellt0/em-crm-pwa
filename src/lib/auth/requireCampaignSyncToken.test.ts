@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requireCampaignSyncToken } from "./requireCampaignSyncToken";
+
+const originalSyncToken = process.env.CAMPAIGN_STUDIO_SYNC_TOKEN;
 
 function request(token?: string) {
   return new NextRequest("http://localhost/api/internal/campaign-sync/contacts", {
@@ -8,8 +10,16 @@ function request(token?: string) {
   });
 }
 
-afterEach(() => {
+beforeEach(() => {
   delete process.env.CAMPAIGN_STUDIO_SYNC_TOKEN;
+});
+
+afterEach(() => {
+  if (originalSyncToken === undefined) {
+    delete process.env.CAMPAIGN_STUDIO_SYNC_TOKEN;
+  } else {
+    process.env.CAMPAIGN_STUDIO_SYNC_TOKEN = originalSyncToken;
+  }
 });
 
 describe("requireCampaignSyncToken", () => {
