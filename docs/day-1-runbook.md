@@ -10,7 +10,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3001`.
 
 ## Stop
 
@@ -36,8 +36,8 @@ CRM uses magic-link email auth. In local development, MailHog is available at `h
 
 Seeded admin emails:
 
-- `darnell@example.com`
-- `shria@example.com`
+- the addresses configured in `ADMIN_EMAILS` (see `.env`)
+
 
 ## Verify Imports
 

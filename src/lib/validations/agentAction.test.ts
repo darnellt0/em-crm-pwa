@@ -53,12 +53,28 @@ describe("AgentActionPayloadSchema", () => {
     ).toBe(false);
   });
 
-  it("requires follow-ups to be in the future", () => {
+  it("still parses stored follow-up payloads whose date has since passed", () => {
+    // Stored payloads are re-parsed at summary/execution time; a proposal that
+    // was valid when submitted must not become unexecutable once the date passes.
     expect(
       AgentActionPayloadSchema.safeParse({
         actionType: "set_follow_up",
         contactId,
         nextFollowUpAt: "2020-01-01T12:00:00.000Z",
+      }).success
+    ).toBe(true);
+  });
+
+  it("rejects new follow-up proposals dated in the past", () => {
+    expect(
+      AgentActionProposalSchema.safeParse({
+        idempotencyKey: "nia-followup-1",
+        rationale: "Contact asked for a check-in call.",
+        action: {
+          actionType: "set_follow_up",
+          contactId,
+          nextFollowUpAt: "2020-01-01T12:00:00.000Z",
+        },
       }).success
     ).toBe(false);
   });

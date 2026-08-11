@@ -5,7 +5,6 @@ import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,7 +32,6 @@ export default function ProgramsPage() {
       await apiPost("/api/programs", {
         name: form.get("name"),
         description: form.get("description") || undefined,
-        status: form.get("status") || "draft",
       });
       toast.success("Program created");
       setCreateOpen(false);
@@ -41,14 +39,6 @@ export default function ProgramsPage() {
     } catch (err: any) {
       toast.error(err.message);
     }
-  };
-
-  const statusColors: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-800",
-    active: "bg-green-100 text-green-800",
-    paused: "bg-amber-100 text-amber-800",
-    completed: "bg-blue-100 text-blue-800",
-    archived: "bg-gray-100 text-gray-500",
   };
 
   return (
@@ -78,20 +68,6 @@ export default function ProgramsPage() {
                 <Label htmlFor="description">Description</Label>
                 <Textarea id="description" name="description" />
               </div>
-              <div>
-                <Label htmlFor="status">Status</Label>
-                <select
-                  id="status"
-                  name="status"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  defaultValue="draft"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </div>
               <DialogFooter>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
@@ -120,12 +96,7 @@ export default function ProgramsPage() {
           {programs.map((p: any) => (
             <Card key={p.id}>
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{p.name}</CardTitle>
-                  <Badge className={statusColors[p.status] || statusColors.draft}>
-                    {p.status}
-                  </Badge>
-                </div>
+                <CardTitle className="text-base">{p.name}</CardTitle>
               </CardHeader>
               <CardContent>
                 {p.description && (

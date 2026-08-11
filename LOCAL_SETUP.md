@@ -121,6 +121,24 @@ For Gmail or Google Workspace on the Windows production host, use `pnpm email:co
 
 Do not expose ports 5434, 5678, 8025, or 1025 to the public internet. Use Tailscale or another private network for multi-device access.
 
+## Phone Access (PWA over Tailscale HTTPS)
+
+Phones need an **HTTPS** URL to install the CRM as an app (Add to Home Screen requires a secure context). Tailscale provides one for free, without exposing anything to the public internet:
+
+1. **Install Tailscale on each phone** and sign in to the same tailnet as the host machine.
+2. **Enable HTTPS on the tailnet.** In the [Tailscale admin console](https://login.tailscale.com/admin/dns), turn on **MagicDNS** and **HTTPS Certificates**.
+3. **On the host machine**, publish the CRM to the tailnet with a trusted certificate:
+   ```powershell
+   tailscale serve --bg 3001
+   ```
+   This serves `https://<machine-name>.<tailnet-name>.ts.net` → `localhost:3001`, visible only to devices on your tailnet.
+4. **Point the app at the new URL.** In `.env`, set `NEXTAUTH_URL="https://<machine-name>.<tailnet-name>.ts.net"` and restart the CRM. Everyone (desktop and phone) must use this URL from now on, since magic links are generated from it.
+5. **On each phone**, open the URL in the browser, sign in, then use **Add to Home Screen** (Android Chrome: menu → *Add to Home screen*; iPhone Safari: Share → *Add to Home Screen*). The CRM now opens like a native app.
+
+**iPhone caveat:** a magic link tapped in the Mail app opens Safari, whose sign-in session is separate from the installed home-screen app. Either use the CRM in Safari directly, or copy the magic-link URL from the email and paste it into the installed app once — sessions last a long time, so this is rare.
+
+**Native mobile app:** the `mobile/` folder contains a Capacitor Android/iOS shell, but it is hard-wired to `https://crm.elevatedmovements.com` (a public domain that is not set up) and cannot reach a Tailscale-only CRM. Treat it as a future option; the PWA path above is the supported way to use the CRM on phones today.
+
 ## Automatic Production Startup
 
 Build the current version once, then install the per-user Windows scheduled tasks:

@@ -55,6 +55,12 @@ fi
 # ── Run restore ───────────────────────────────────────────────────────────────
 
 echo "🔄 Restoring ${DB_NAME} from ${BACKUP_FILE} ..."
+echo "   (Stop the CRM app first so no live connections interfere.)"
+
+# Close lingering app connections so DROP/CREATE statements don't block.
+docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -q -c \
+  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+   WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();" > /dev/null
 
 # Determine if file is gzip-compressed
 if [[ "$BACKUP_FILE" == *.gz ]]; then
@@ -63,12 +69,17 @@ else
   PIPE_CMD="cat"
 fi
 
+# ON_ERROR_STOP makes psql exit non-zero on the FIRST failed statement, and
+# --single-transaction rolls the whole restore back on failure — without
+# these, psql exits 0 even when statements fail and we would falsely report
+# success over a partial restore.
 if $PIPE_CMD "$BACKUP_FILE" | docker exec -i "$DB_CONTAINER" \
-    psql -U "$DB_USER" -d "$DB_NAME" -q; then
+    psql -U "$DB_USER" -d "$DB_NAME" -q \
+    -v ON_ERROR_STOP=1 --single-transaction; then
   echo "✅ Restore complete! Database '${DB_NAME}' has been restored."
   echo "   Restart the app if it is running: Ctrl+C then pnpm dev"
 else
-  echo "❌ Restore failed. The database may be in a partial state."
-  echo "   Check Docker logs: docker logs ${DB_CONTAINER}"
+  echo "❌ Restore FAILED and was rolled back — the database is unchanged."
+  echo "   Check the error above, or Docker logs: docker logs ${DB_CONTAINER}"
   exit 1
 fi

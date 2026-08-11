@@ -76,7 +76,8 @@ export const authOptions: NextAuthOptions = {
           where: { id: token.sub },
           select: { role: true },
         });
-        (session.user as any).role = dbUser?.role || "staff";
+        // A session whose user row vanished must never display write-tier UI.
+        (session.user as any).role = dbUser?.role || "read_only";
       }
       return session;
     },

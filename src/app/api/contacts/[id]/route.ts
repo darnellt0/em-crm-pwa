@@ -61,7 +61,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireUserOrInternalToken(req, "staff");
+    // Writes are session-only: agents propose changes through the approval
+    // queue (/api/internal/agent-actions) instead of mutating directly.
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = UpdateContactSchema.safeParse(body);
     if (!parsed.success) {
@@ -70,6 +72,11 @@ export async function PATCH(
 
     const data = parsed.data;
     const updateData: any = { ...data };
+
+    if (data.email) {
+      // Stored lowercased everywhere so email dedupe stays case-insensitive.
+      updateData.email = data.email.trim().toLowerCase();
+    }
 
     if (data.phone !== undefined) {
       updateData.phoneNormalized = normalizePhone(data.phone);

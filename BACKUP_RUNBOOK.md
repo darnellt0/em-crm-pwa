@@ -14,7 +14,11 @@ This script will:
 1. Connect to the local `em_postgres` Docker container.
 2. Run `pg_dump` to extract all schema and data.
 3. Compress the output into a `.gz` file.
-4. Remove local backup files older than 30 days.
+
+*Note: 30-day retention pruning happens in the scheduled Windows backup task
+(`tools/backup-db.ps1`, installed by `pnpm ops:install`), not in `pnpm backup:db`.
+The scheduled task writes files named `em-crm-YYYYMMDD-HHMMSS.sql.gz`; the manual
+script writes `em_crm_backup_YYYYMMDD_HHMMSS.sql.gz`. Both restore the same way.*
 
 ## Where Backups are Stored
 
@@ -31,6 +35,16 @@ To restore the database from a previous backup, run the restore script and pass 
 ```bash
 pnpm restore:db ./backups/em_crm_backup_20260508_143000.sql.gz
 ```
+
+On the Windows production host (no bash required):
+
+```powershell
+pnpm restore:db:win .\backups\em-crm-20260811-190000.sql.gz
+```
+
+Both scripts run the restore inside a single transaction with `ON_ERROR_STOP`,
+so a failed restore rolls back and leaves the database unchanged. Stop the CRM
+app before restoring.
 
 **⚠️ WARNING:** Restoring a backup will **OVERWRITE** your current database. The script will prompt you for confirmation before proceeding.
 

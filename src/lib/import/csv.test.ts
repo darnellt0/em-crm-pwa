@@ -15,4 +15,9 @@ describe("parseCsvRecords", () => {
       ],
     });
   });
+
+  it("rejects duplicate column headers instead of silently dropping data", () => {
+    const csv = "Email,Phone,Phone\njane@example.com,555-1111,555-2222\n";
+    expect(() => parseCsvRecords(csv)).toThrow(/Duplicate column header "Phone"/);
+  });
 });

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { handleAuthError } from "@/lib/auth/requireRole";
-import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
+import { handleAuthError, requireRole } from "@/lib/auth/requireRole";
 import { CreateInteractionSchema } from "@/lib/validations/interaction";
 import { extractMemoryProposals } from "@/lib/ai/ollama";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUserOrInternalToken(req, "staff");
+    // Session-only: agents log interactions via the approval queue's
+    // log_interaction action, never by writing here directly.
+    const { userId } = await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateInteractionSchema.safeParse(body);
     if (!parsed.success) {

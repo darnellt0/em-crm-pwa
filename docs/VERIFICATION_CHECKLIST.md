@@ -13,15 +13,15 @@ Then manually confirm the following in the browser:
 - [ ] `docker compose up -d` starts all three services (postgres, mailhog, n8n)
 - [ ] `pnpm db:push` applies schema without errors
 - [ ] `pnpm db:seed` creates Darnell and Shria as admin users
-- [ ] `pnpm dev` starts the app at http://localhost:3000
+- [ ] `pnpm dev` starts the app at http://localhost:3001
 
 ## Auth
-- [ ] Sign-in page loads at http://localhost:3000/auth/signin
+- [ ] Sign-in page loads at http://localhost:3001/auth/signin
 - [ ] Entering Darnell's email sends a magic link
 - [ ] MailHog at http://localhost:8025 shows the email
 - [ ] Clicking the magic link signs in successfully
 - [ ] After sign-in, user is redirected to the dashboard
-- [ ] Verify page at http://localhost:3000/auth/verify shows MailHog tip
+- [ ] Verify page at http://localhost:3001/auth/verify shows MailHog tip
 
 ## Dashboard
 - [ ] Dashboard loads and shows stat cards

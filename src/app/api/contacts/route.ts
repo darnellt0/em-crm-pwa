@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { handleAuthError } from "@/lib/auth/requireRole";
+import { handleAuthError, requireRole } from "@/lib/auth/requireRole";
 import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
 import { CreateContactSchema } from "@/lib/validations/contact";
 import { normalizePhone } from "@/lib/phone/normalize";
@@ -55,7 +55,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUserOrInternalToken(req, "staff");
+    // Writes are session-only: agents propose changes through the approval
+    // queue (/api/internal/agent-actions) instead of mutating directly.
+    await requireRole("staff");
     const body = await req.json().catch(() => ({}));
     const parsed = CreateContactSchema.safeParse(body);
     if (!parsed.success) {
@@ -69,7 +71,9 @@ export async function POST(req: NextRequest) {
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email || undefined,
+        // Emails are stored lowercased everywhere (imports, campaign sync)
+        // so the case-sensitive unique column behaves case-insensitively.
+        email: data.email ? data.email.trim().toLowerCase() : undefined,
         phone: data.phone,
         phoneNormalized,
         persona: data.persona,

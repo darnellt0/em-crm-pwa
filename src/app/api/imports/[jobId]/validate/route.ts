@@ -44,6 +44,12 @@ export async function POST(
       normalized: Record<string, any>;
     }> = [];
 
+    // Track contacts this file would create, so a second occurrence of the
+    // same email/phone previews as "update" — matching what the run step
+    // actually does when it processes rows sequentially.
+    const previewByEmail = new Map<string, string>();
+    const previewByPhone = new Map<string, string>();
+
     for (const row of job.rows) {
       const raw = row.raw as Record<string, string>;
       const normalized: Record<string, any> = {};
@@ -75,23 +81,31 @@ export async function POST(
       // Dedupe check
       let existingContact: any = null;
       let matchType: string | null = null;
+      const emailKey = hasEmail ? String(normalized.email).trim().toLowerCase() : null;
+      const phoneNorm = hasPhone ? normalizePhone(normalized.phone) : null;
 
-      if (hasEmail) {
-        existingContact = await prisma.contact.findUnique({
-          where: { email: normalized.email },
+      if (emailKey) {
+        // Case-insensitive so mixed-case stored emails still match (same as run).
+        existingContact = await prisma.contact.findFirst({
+          where: { email: { equals: emailKey, mode: "insensitive" } },
           select: { id: true, firstName: true, lastName: true },
         });
         if (existingContact) matchType = "email";
+        if (!existingContact && previewByEmail.has(emailKey)) {
+          existingContact = { firstName: previewByEmail.get(emailKey), lastName: null };
+          matchType = "email";
+        }
       }
 
-      if (!existingContact && hasPhone) {
-        const phoneNorm = normalizePhone(normalized.phone);
-        if (phoneNorm) {
-          existingContact = await prisma.contact.findUnique({
-            where: { phoneNormalized: phoneNorm },
-            select: { id: true, firstName: true, lastName: true },
-          });
-          if (existingContact) matchType = "phone";
+      if (!existingContact && phoneNorm) {
+        existingContact = await prisma.contact.findUnique({
+          where: { phoneNormalized: phoneNorm },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        if (existingContact) matchType = "phone";
+        if (!existingContact && previewByPhone.has(phoneNorm)) {
+          existingContact = { firstName: previewByPhone.get(phoneNorm), lastName: null };
+          matchType = "phone";
         }
       }
 
@@ -109,6 +123,12 @@ export async function POST(
         });
       } else {
         willCreate++;
+        const previewName =
+          [normalized.firstName, normalized.lastName].filter(Boolean).join(" ") ||
+          emailKey ||
+          "(new contact from this file)";
+        if (emailKey) previewByEmail.set(emailKey, previewName);
+        if (phoneNorm) previewByPhone.set(phoneNorm, previewName);
         rowPreviews.push({
           rowIndex: row.rowIndex,
           action: "create",

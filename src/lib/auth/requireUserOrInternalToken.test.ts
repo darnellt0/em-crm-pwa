@@ -57,9 +57,26 @@ describe("requireUserOrInternalToken", () => {
     ).rejects.toThrow("UNAUTHENTICATED");
   });
 
-  it("internal token grants staff role regardless of minimumRole parameter", async () => {
+  it("internal token satisfies call sites at or below staff", async () => {
     process.env.INTERNAL_SERVICE_TOKEN = "test-token";
     const result = await requireUserOrInternalToken(request("test-token"), "read_only");
     expect(result.role).toBe("staff");
+  });
+
+  it("internal token is rejected for call sites above staff", async () => {
+    process.env.INTERNAL_SERVICE_TOKEN = "test-token";
+    await expect(
+      requireUserOrInternalToken(request("test-token"), "partner_admin")
+    ).rejects.toThrow("FORBIDDEN_ROLE");
+    await expect(
+      requireUserOrInternalToken(request("test-token"), "admin")
+    ).rejects.toThrow("FORBIDDEN_ROLE");
+  });
+
+  it("treats change_me placeholder tokens as unconfigured", async () => {
+    process.env.INTERNAL_SERVICE_TOKEN = "change_me_long_random";
+    await expect(
+      requireUserOrInternalToken(request("change_me_long_random"), "staff")
+    ).rejects.toThrow("UNAUTHENTICATED");
   });
 });

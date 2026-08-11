@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Settings,
   Bot,
+  Receipt,
   LogOut,
   Menu,
   X,
@@ -22,18 +23,33 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
-const navItems = [
+const navItems: Array<{
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  minRole?: string;
+}> = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
+  { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/memory-inbox", label: "Memory Inbox", icon: Brain },
   { href: "/agent-actions", label: "Agent Approvals", icon: Bot },
   { href: "/search", label: "Semantic Search", icon: Search },
   { href: "/programs", label: "Programs", icon: GraduationCap },
-  { href: "/imports", label: "Import", icon: Upload },
+  // The entire imports API requires partner_admin; hide the entry from
+  // lower roles instead of letting them fail mid-wizard.
+  { href: "/imports", label: "Import", icon: Upload, minRole: "partner_admin" },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+const ROLE_LEVELS: Record<string, number> = {
+  admin: 40,
+  partner_admin: 30,
+  staff: 20,
+  read_only: 10,
+};
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -77,6 +93,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {navItems.map((item) => {
+            const userRole = (session?.user as { role?: string } | undefined)?.role || "read_only";
+            if (item.minRole && (ROLE_LEVELS[userRole] || 0) < (ROLE_LEVELS[item.minRole] || 0)) {
+              return null;
+            }
             const isActive =
               item.href === "/"
                 ? pathname === "/"

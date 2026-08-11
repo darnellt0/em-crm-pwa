@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { Plus, DollarSign, GripVertical } from "lucide-react";
 import Link from "next/link";
+import { ContactPicker } from "@/components/crm/ContactPicker";
 
 const STAGES = [
   { key: "discovery", label: "Discovery", color: "bg-blue-500" },
@@ -93,6 +94,10 @@ export default function PipelinePage() {
               <DialogTitle>Create Opportunity</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <Label htmlFor="contactId">Contact</Label>
+                {createOpen && <ContactPicker id="contactId" required />}
+              </div>
               <div>
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" name="name" required />

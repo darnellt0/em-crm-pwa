@@ -7,6 +7,8 @@ configured agents can use it. Every proposed change requires approval in the CRM
 ## Security Model
 
 - Summary and limited contact lookup are protected by `INTERNAL_SERVICE_TOKEN`.
+- `INTERNAL_SERVICE_TOKEN` is strictly read-only: contact and interaction writes
+  require a signed-in user or an approved proposal — the token cannot mutate CRM data.
 - Proposals use a separate `OPENCLAW_WRITE_TOKEN` that cannot mutate CRM records directly.
 - The token is stored in `~/.openclaw/secrets/em-crm-token.txt` with mode `0600`.
 - The write token is stored separately in `~/.openclaw/secrets/em-crm-write-token.txt`.

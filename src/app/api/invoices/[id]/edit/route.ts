@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db/prisma";
 import { handleAuthError, requireRole } from "@/lib/auth/requireRole";
@@ -27,13 +28,29 @@ export async function PATCH(
         };
       }
 
+      const { changeNote, ...data } = parsed.data;
+
       if (invoice.status === "paid") {
-        return {
-          type: "paid" as const,
-        };
+        // Escape hatch for a mistaken "paid": an admin may void the invoice
+        // (recorded in the revision history); every other edit stays blocked.
+        const isVoidOnly =
+          data.status === "void" &&
+          data.amount === undefined &&
+          data.issueDate === undefined &&
+          data.dueDate === undefined &&
+          data.notes === undefined;
+        if (!isVoidOnly || user.role !== "admin") {
+          return {
+            type: "paid" as const,
+          };
+        }
       }
 
-      const { changeNote, ...data } = parsed.data;
+      const effectiveIssueDate = data.issueDate ? new Date(data.issueDate) : invoice.issueDate;
+      const effectiveDueDate = data.dueDate ? new Date(data.dueDate) : invoice.dueDate;
+      if (effectiveDueDate < effectiveIssueDate) {
+        return { type: "bad_dates" as const };
+      }
 
       await tx.invoiceRevision.create({
         data: {
@@ -84,11 +101,31 @@ export async function PATCH(
     }
 
     if (result.type === "paid") {
-      return NextResponse.json({ ok: false, error: "Paid invoices cannot be edited" }, { status: 400 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Paid invoices cannot be edited. An admin can void a paid invoice by changing only its status to \"void\".",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (result.type === "bad_dates") {
+      return NextResponse.json(
+        { ok: false, error: "Due date cannot be before the issue date" },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ ok: true, invoice: result.invoice });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { ok: false, error: "Invoice was modified by someone else — reload and retry" },
+        { status: 409 }
+      );
+    }
     return handleAuthError(error);
   }
 }

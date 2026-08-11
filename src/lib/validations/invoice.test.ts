@@ -18,4 +18,19 @@ describe("invoice validation", () => {
     expect(CreateInvoiceSchema.safeParse({ ...validInvoice, amount: 10.001 }).success).toBe(false);
     expect(EditInvoiceSchema.safeParse({ amount: Number.POSITIVE_INFINITY }).success).toBe(false);
   });
+
+  it("rejects a due date before the issue date", () => {
+    expect(
+      CreateInvoiceSchema.safeParse({
+        ...validInvoice,
+        dueDate: "2026-07-01T12:00:00.000Z",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects edits that change no invoice field", () => {
+    expect(EditInvoiceSchema.safeParse({}).success).toBe(false);
+    expect(EditInvoiceSchema.safeParse({ changeNote: "no-op" }).success).toBe(false);
+    expect(EditInvoiceSchema.safeParse({ status: "sent" }).success).toBe(true);
+  });
 });

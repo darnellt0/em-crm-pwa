@@ -10,6 +10,7 @@ AI-powered Contact Relationship Management system built with Next.js 15, Prisma,
 - **Semantic Search** — Natural language search across approved memories using pgvector cosine similarity
 - **Opportunities Pipeline** — Kanban-style drag-and-drop board for tracking deals through stages
 - **Task Management** — Priority levels (low/medium/high/urgent), due dates, contact linking
+- **Invoices** — Create, edit, and track invoices per contact with a full per-edit revision history; every change records who made it and why (viewing requires `read_only`, editing requires `staff`; voiding a paid invoice requires `admin`)
 - **CSV Import** — 5-step staged wizard (Upload → Map → Validate → Run → Done) with deduplication preview
 - **Saved Views** — Save and share filtered/sorted contact list configurations
 - **Programs & Enrollments** — Track programs and contact enrollments
@@ -121,7 +122,13 @@ optional Next.js/verifier overrides that should not affect Docker Compose:
 | `SMTP_USER` / `SMTP_PASSWORD` | Credentials for a real SMTP provider |
 | `EMAIL_FROM` | Sender email address |
 | `OLLAMA_URL` | Ollama API URL (default: `http://127.0.0.1:11434`) |
-| `INTERNAL_SERVICE_TOKEN` | Read/internal token for the embedding worker and limited OpenClaw reads |
+| `OLLAMA_MODEL` | Chat model used for memory extraction (default: `qwen2.5:7b-instruct`) |
+| `OLLAMA_EMBED_MODEL` | Embedding model for semantic search (default: `nomic-embed-text`) |
+| `SEED_DARNELL_EMAIL` / `SEED_SHRIA_EMAIL` | Emails given the seeded display names; the first is also the Gmail sender default and owns the seeded saved views |
+| `APPLE_TEAM_ID` | Apple Team ID for iOS universal links; leave blank until release signing exists |
+| `ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS` | Android app-link certificate fingerprints; leave blank until release signing exists |
+| `PHASE5_IMPORT_TOKEN` | Dev-only token for scripted cleaned-master imports (`/api/imports/cleaned-master`); ignored when `NODE_ENV=production` |
+| `INTERNAL_SERVICE_TOKEN` | Read-only internal token for the embedding worker and limited OpenClaw reads — it cannot write CRM data |
 | `CAMPAIGN_STUDIO_SYNC_TOKEN` | Dedicated token accepted only by Campaign Studio synchronization endpoints |
 | `CAMPAIGN_SYNC_DEFAULT_OWNER_EMAIL` | Optional CRM user assigned to contacts first created by Campaign Studio |
 | `OPENCLAW_WRITE_TOKEN` | Separate token that can submit validated OpenClaw proposals but cannot execute them |

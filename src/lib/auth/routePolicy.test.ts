@@ -10,7 +10,7 @@ const EXPECTED_ROLE_CALLS: Record<string, string[]> = {
   "contacts/bulk/route.ts": ["staff", "partner_admin"],
   "dashboard/route.ts": ["read_only"],
   "enrollments/route.ts": ["staff"],
-  "imports/[jobId]/execute/route.ts": ["partner_admin"],
+  "interactions/route.ts": ["staff"],
   "imports/[jobId]/map/route.ts": ["partner_admin"],
   "imports/[jobId]/rows/route.ts": ["partner_admin"],
   "imports/[jobId]/run/route.ts": ["partner_admin"],
@@ -37,17 +37,17 @@ const EXPECTED_ROLE_CALLS: Record<string, string[]> = {
 };
 
 // Routes that accept either session auth OR internal service token.
-// The role listed is the minimum for session-based auth; token auth
-// grants staff-equivalent access.
+// Dual auth is READ-ONLY by policy: every write handler is session-only so
+// agent changes must flow through the approval queue. The role listed is the
+// minimum for session-based auth; token auth grants staff-equivalent reads.
 const EXPECTED_DUAL_AUTH: Record<string, string[]> = {
-  "contacts/route.ts": ["read_only", "staff"],
-  "contacts/[id]/route.ts": ["read_only", "staff"],
-  "interactions/route.ts": ["staff"],
+  "contacts/route.ts": ["read_only"],
 };
 
-// contacts/[id]/route.ts also has a DELETE handler that stays session-only
+// Files mixing dual-auth reads with session-only write handlers.
 const EXPECTED_MIXED_AUTH: Record<string, { roleOnly: string[]; dual: string[] }> = {
-  "contacts/[id]/route.ts": { roleOnly: ["partner_admin"], dual: ["read_only", "staff"] },
+  "contacts/route.ts": { roleOnly: ["staff"], dual: ["read_only"] },
+  "contacts/[id]/route.ts": { roleOnly: ["partner_admin", "staff"], dual: ["read_only"] },
 };
 
 describe("API route authorization policy", () => {

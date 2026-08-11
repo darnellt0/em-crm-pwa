@@ -3,7 +3,7 @@
 ## Android on Windows
 
 ```powershell
-cd C:\dev\elevated-movements\CRM\mobile
+cd F:\dev\em-crm-pwa\mobile
 npm install
 npm run build
 

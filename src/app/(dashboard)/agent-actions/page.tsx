@@ -32,6 +32,7 @@ type AgentAction = {
   status: string;
   summary: string;
   rationale: string;
+  payload: Record<string, unknown> | null;
   error: string | null;
   createdAt: string;
   expiresAt: string;
@@ -60,6 +61,38 @@ const statusClasses: Record<string, string> = {
   failed: "border-red-300 bg-red-50 text-red-800",
   expired: "border-gray-300 bg-gray-50 text-gray-600",
 };
+
+const PAYLOAD_LABELS: Record<string, string> = {
+  title: "Title",
+  description: "Description",
+  priority: "Priority",
+  dueAt: "Due",
+  type: "Type",
+  summary: "Summary",
+  outcome: "Outcome",
+  occurredAt: "Occurred",
+  nextFollowUpAt: "Follow-up",
+  lifecycleStage: "Stage",
+  tags: "Tags",
+};
+
+// Every payload field the reviewer is approving must be visible on the card.
+function payloadDetails(payload: unknown): Array<[string, string]> {
+  if (!payload || typeof payload !== "object") return [];
+  return Object.entries(payload as Record<string, unknown>)
+    .filter(
+      ([key, value]) =>
+        key !== "actionType" && key !== "contactId" && value !== null && value !== undefined && value !== ""
+    )
+    .map(([key, value]) => {
+      let text: string;
+      if (Array.isArray(value)) text = value.join(", ");
+      else if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value))
+        text = new Date(value).toLocaleString();
+      else text = String(value);
+      return [PAYLOAD_LABELS[key] || key, text];
+    });
+}
 
 function actionLabel(actionType: string) {
   return actionType.replaceAll("_", " ");
@@ -188,6 +221,16 @@ export default function AgentActionsPage() {
                     </div>
                     <p className="text-sm font-semibold">{action.summary}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{action.rationale}</p>
+                    {payloadDetails(action.payload).length > 0 && (
+                      <dl className="mt-2 space-y-0.5 text-sm">
+                        {payloadDetails(action.payload).map(([label, value]) => (
+                          <div key={label} className="flex gap-2">
+                            <dt className="shrink-0 font-medium text-muted-foreground">{label}:</dt>
+                            <dd className="min-w-0 break-words">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
                   </div>
                   {canReview && action.status === "pending" && (
                     <div className="flex w-full shrink-0 justify-end gap-2 sm:w-auto">
@@ -251,6 +294,16 @@ export default function AgentActionsPage() {
               <div className="border-l-4 border-primary bg-muted/40 px-4 py-3">
                 <p className="text-sm font-semibold">{selection.action.summary}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{selection.action.rationale}</p>
+                {payloadDetails(selection.action.payload).length > 0 && (
+                  <dl className="mt-2 space-y-0.5 text-sm">
+                    {payloadDetails(selection.action.payload).map(([label, value]) => (
+                      <div key={label} className="flex gap-2">
+                        <dt className="shrink-0 font-medium text-muted-foreground">{label}:</dt>
+                        <dd className="min-w-0 break-words">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
               </div>
               {selection.decision === "approve" ? (
                 <p className="text-sm text-muted-foreground">
@@ -271,7 +324,14 @@ export default function AgentActionsPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelection(null)} disabled={submitting}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelection(null);
+                setReason("");
+              }}
+              disabled={submitting}
+            >
               Cancel
             </Button>
             <Button
