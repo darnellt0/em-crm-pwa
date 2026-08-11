@@ -83,8 +83,10 @@ export async function POST(
         let matchType: string | null = null;
 
         if (contactData.email) {
-          existingContact = await prisma.contact.findUnique({
-            where: { email: contactData.email },
+          // Case-insensitive so contacts stored with mixed-case emails
+          // (created before lowercasing was enforced) still match.
+          existingContact = await prisma.contact.findFirst({
+            where: { email: { equals: contactData.email, mode: "insensitive" } },
             select: { id: true },
           });
           if (existingContact) matchType = "email";

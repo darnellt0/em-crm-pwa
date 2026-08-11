@@ -71,6 +71,11 @@ export async function PATCH(
     const data = parsed.data;
     const updateData: any = { ...data };
 
+    if (data.email) {
+      // Stored lowercased everywhere so email dedupe stays case-insensitive.
+      updateData.email = data.email.trim().toLowerCase();
+    }
+
     if (data.phone !== undefined) {
       updateData.phoneNormalized = normalizePhone(data.phone);
     }

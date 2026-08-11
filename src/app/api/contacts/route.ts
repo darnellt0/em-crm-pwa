@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email || undefined,
+        // Emails are stored lowercased everywhere (imports, campaign sync)
+        // so the case-sensitive unique column behaves case-insensitively.
+        email: data.email ? data.email.trim().toLowerCase() : undefined,
         phone: data.phone,
         phoneNormalized,
         persona: data.persona,

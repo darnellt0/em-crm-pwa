@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
+import { ContactPicker } from "@/components/crm/ContactPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,6 +52,11 @@ function toDateInput(value?: string | null) {
 }
 
 export default function InvoicesPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  // Invoice create/edit requires the staff role server-side; hide the
+  // controls from read_only users instead of letting them hit 403s.
+  const canEdit = role !== "read_only";
   const [statusFilter, setStatusFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editInvoice, setEditInvoice] = useState<any | null>(null);
@@ -59,9 +66,6 @@ export default function InvoicesPage() {
   if (statusFilter) params.set("status", statusFilter);
   const { data, loading, refetch } = useApi<any>(`/api/invoices?${params.toString()}`);
   const invoices = data?.invoices || [];
-
-  const { data: contactsData } = useApi<any>(createOpen ? "/api/contacts?limit=200" : null);
-  const contacts = contactsData?.items || [];
 
   const { data: historyData } = useApi<any>(
     historyInvoice ? `/api/invoices/${historyInvoice.id}/history` : null
@@ -118,6 +122,7 @@ export default function InvoicesPage() {
           <h1 className="text-2xl font-bold">Invoices</h1>
           <p className="text-muted-foreground">{invoices.length} invoices</p>
         </div>
+        {canEdit && (
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -132,22 +137,7 @@ export default function InvoicesPage() {
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <Label htmlFor="inv-contactId">Contact</Label>
-                <select
-                  id="inv-contactId"
-                  name="contactId"
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Select a contact…
-                  </option>
-                  {contacts.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {contactName(c)}
-                    </option>
-                  ))}
-                </select>
+                {createOpen && <ContactPicker id="inv-contactId" required />}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -201,6 +191,7 @@ export default function InvoicesPage() {
             </form>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -271,16 +262,18 @@ export default function InvoicesPage() {
                   >
                     <History className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={inv.status === "paid"}
-                    title={inv.status === "paid" ? "Paid invoices cannot be edited" : "Edit invoice"}
-                    onClick={() => setEditInvoice(inv)}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={inv.status === "paid"}
+                      title={inv.status === "paid" ? "Paid invoices cannot be edited" : "Edit invoice"}
+                      onClick={() => setEditInvoice(inv)}
+                    >
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             );
