@@ -41,6 +41,32 @@ async function verifyReferences(action: AgentActionPayload) {
   }
 }
 
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * A reused idempotency key must carry the same payload as the stored
+ * proposal — silently returning the old proposal would make the agent
+ * believe its new, different proposal was queued.
+ */
+function assertSamePayload(stored: Prisma.JsonValue, incoming: unknown) {
+  if (stableStringify(stored) !== stableStringify(incoming)) {
+    throw new AgentActionError(
+      "IDEMPOTENCY_CONFLICT",
+      "Idempotency key was already used with a different payload; use a new key",
+      409
+    );
+  }
+}
+
 export async function createAgentActionProposal(input: unknown) {
   const parsed = AgentActionProposalSchema.safeParse(input);
   if (!parsed.success) {
@@ -61,7 +87,10 @@ export async function createAgentActionProposal(input: unknown) {
     },
     include: { contact: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
-  if (existing) return { action: existing, created: false };
+  if (existing) {
+    assertSamePayload(existing.payload, proposal.action);
+    return { action: existing, created: false };
+  }
 
   const now = new Date();
   const recentCount = await prisma.agentActionRequest.count({
@@ -117,6 +146,7 @@ export async function createAgentActionProposal(input: unknown) {
         },
         include: { contact: { select: { id: true, firstName: true, lastName: true, email: true } } },
       });
+      assertSamePayload(action.payload, proposal.action);
       return { action, created: false };
     }
     throw error;

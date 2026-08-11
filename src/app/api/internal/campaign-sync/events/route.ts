@@ -65,12 +65,13 @@ export async function POST(req: NextRequest) {
       statusTags(parsed.data.eventType).forEach((tag) => tags.add(tag));
       const suppress = statusTags(parsed.data.eventType).length > 0;
       if (suppress) {
+        // Suppression is a marketing signal only: add the Do Not Market tags
+        // but never overwrite human-managed fields (lifecycle stage, scheduled
+        // follow-ups). A bounced email must not demote a customer to "lead".
         await tx.contact.update({
           where: { id: contact.id },
           data: {
             tags: Array.from(tags),
-            lifecycleStage: "lead",
-            nextFollowUpAt: null,
             lastTouchAt,
           },
         });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db/prisma";
 import { handleAuthError, requireRole } from "@/lib/auth/requireRole";
@@ -55,6 +56,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, invoice }, { status: 201 });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
+    }
     return handleAuthError(error);
   }
 }

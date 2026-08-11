@@ -113,6 +113,25 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleVoid = async (inv: any) => {
+    if (
+      !confirm(
+        `Void this paid ${formatAmount(inv.amount)} invoice for ${contactName(inv.contact)}? The change is recorded in its history.`
+      )
+    )
+      return;
+    try {
+      await apiPatch(`/api/invoices/${inv.id}/edit`, {
+        status: "void",
+        changeNote: "Voided a paid invoice",
+      });
+      toast.success("Invoice voided");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const today = new Date();
 
   return (
@@ -262,16 +281,25 @@ export default function InvoicesPage() {
                   >
                     <History className="h-4 w-4" />
                   </Button>
-                  {canEdit && (
+                  {canEdit && inv.status !== "paid" && (
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={inv.status === "paid"}
-                      title={inv.status === "paid" ? "Paid invoices cannot be edited" : "Edit invoice"}
+                      title="Edit invoice"
                       onClick={() => setEditInvoice(inv)}
                     >
                       <Pencil className="h-4 w-4 mr-2" />
                       Edit
+                    </Button>
+                  )}
+                  {role === "admin" && inv.status === "paid" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      title="Void this paid invoice (recorded in history)"
+                      onClick={() => handleVoid(inv)}
+                    >
+                      Void
                     </Button>
                   )}
                 </CardContent>

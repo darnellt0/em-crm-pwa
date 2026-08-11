@@ -31,7 +31,24 @@ export async function POST(
       csvText = await req.text();
     }
 
-    const { headers, rows } = parseCsvRecords(csvText);
+    if (job.status !== "uploaded") {
+      return NextResponse.json(
+        { ok: false, error: "This job already has a file — create a new import to upload again" },
+        { status: 400 }
+      );
+    }
+
+    let headers: string[];
+    let rows: Record<string, string>[];
+    try {
+      ({ headers, rows } = parseCsvRecords(csvText));
+    } catch (parseError) {
+      // Surface the parser's message (bad quoting, duplicate headers, …)
+      // instead of a generic 500 so the user can fix their file.
+      const message =
+        parseError instanceof Error ? parseError.message : "Could not parse the CSV file";
+      return NextResponse.json({ ok: false, error: `CSV error: ${message}` }, { status: 400 });
+    }
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, error: "No data rows found in CSV" }, { status: 400 });

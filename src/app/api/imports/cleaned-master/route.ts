@@ -62,7 +62,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "csvText is required" }, { status: 400 });
     }
 
-    const { rows: rawRecords } = parseCsvRecords(csvText);
+    let rawRecords: Record<string, string>[];
+    try {
+      ({ rows: rawRecords } = parseCsvRecords(csvText));
+    } catch (parseError) {
+      const message =
+        parseError instanceof Error ? parseError.message : "Could not parse the CSV file";
+      return NextResponse.json({ ok: false, error: `CSV error: ${message}` }, { status: 400 });
+    }
     if (rawRecords.length === 0) {
       return NextResponse.json({ ok: false, error: "CSV has no data rows" }, { status: 400 });
     }
