@@ -20,7 +20,12 @@ export async function GET(req: NextRequest) {
       where.ownerUserId = ownerFilter;
     }
 
-    if (statusFilter) where.status = statusFilter;
+    if (statusFilter === "open") {
+      // "Open" means anything not finished; tasks are stored as todo/in_progress/done.
+      where.status = { not: "done" };
+    } else if (statusFilter) {
+      where.status = statusFilter;
+    }
 
     if (dueFilter === "today") {
       const start = new Date();

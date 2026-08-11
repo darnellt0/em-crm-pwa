@@ -11,10 +11,6 @@ export const LIFECYCLE_STAGES = [
 ] as const;
 
 const ContactIdSchema = z.string().uuid();
-const FutureDateSchema = z.string().datetime().refine(
-  (value) => new Date(value).getTime() > Date.now(),
-  "Date must be in the future"
-);
 
 export const AgentActionPayloadSchema = z.discriminatedUnion("actionType", [
   z.object({
@@ -33,10 +29,13 @@ export const AgentActionPayloadSchema = z.discriminatedUnion("actionType", [
     outcome: z.string().trim().max(2000).optional().nullable(),
     occurredAt: z.string().datetime().optional(),
   }).strict(),
+  // No wall-clock refinement here: stored payloads are re-parsed with this
+  // schema at summary/execution time, possibly after the date has passed.
+  // The future-date requirement is enforced at proposal intake below.
   z.object({
     actionType: z.literal("set_follow_up"),
     contactId: ContactIdSchema,
-    nextFollowUpAt: FutureDateSchema,
+    nextFollowUpAt: z.string().datetime(),
   }).strict(),
   z.object({
     actionType: z.literal("update_lifecycle_stage"),
@@ -57,7 +56,18 @@ export const AgentActionProposalSchema = z.object({
   rationale: z.string().trim().min(5).max(2000),
   expiresAt: z.string().datetime().optional(),
   action: AgentActionPayloadSchema,
-}).strict();
+}).strict().superRefine((proposal, ctx) => {
+  if (
+    proposal.action.actionType === "set_follow_up" &&
+    new Date(proposal.action.nextFollowUpAt).getTime() <= Date.now()
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["action", "nextFollowUpAt"],
+      message: "Date must be in the future",
+    });
+  }
+});
 
 export const AgentActionDecisionSchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("approve") }),

@@ -37,7 +37,18 @@ import {
   AlertCircle,
   Clock,
   Trash2,
+  Pencil,
 } from "lucide-react";
+
+const LIFECYCLE_STAGES = [
+  "lead",
+  "prospect",
+  "opportunity",
+  "customer",
+  "subscriber",
+  "evangelist",
+  "other",
+];
 
 const stageColors: Record<string, string> = {
   lead: "bg-blue-100 text-blue-800",
@@ -55,6 +66,7 @@ export default function ContactDetailPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const canDelete = role === "admin" || role === "partner_admin";
+  const canEdit = role !== "read_only";
   const { data: contactData, loading, refetch } = useApi<any>(`/api/contacts/${id}`);
   const { data: interactionsData, refetch: refetchInteractions } = useApi<any>(
     `/api/contacts/${id}/interactions`
@@ -65,6 +77,9 @@ export default function ContactDetailPage() {
   const { data: oppsData } = useApi<any>(`/api/opportunities?contactId=${id}`);
   const [interactionOpen, setInteractionOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const { data: usersData } = useApi<any>(editOpen ? "/api/users" : null);
+  const users = usersData?.users || [];
 
   const contact = contactData?.contact;
   const interactions = interactionsData?.interactions || [];
@@ -128,6 +143,30 @@ export default function ContactDetailPage() {
     }
   };
 
+  const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const followUp = form.get("nextFollowUpAt") as string;
+    try {
+      await apiPatch(`/api/contacts/${id}`, {
+        // Empty name fields leave the stored value unchanged; empty email/phone
+        // clear the stored value.
+        firstName: form.get("firstName") || undefined,
+        lastName: form.get("lastName") || undefined,
+        email: (form.get("email") as string)?.trim().toLowerCase() || null,
+        phone: form.get("phone") || null,
+        lifecycleStage: form.get("lifecycleStage") || undefined,
+        ownerUserId: form.get("ownerUserId") || null,
+        nextFollowUpAt: followUp ? new Date(followUp).toISOString() : null,
+      });
+      toast.success("Contact updated");
+      setEditOpen(false);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const handleCompleteTask = async (taskId: string) => {
     try {
       await apiPatch(`/api/tasks/${taskId}`, { status: "done" });
@@ -185,6 +224,95 @@ export default function ContactDetailPage() {
             ))}
           </div>
         </div>
+        {canEdit && (
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Contact</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleEdit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-firstName">First name</Label>
+                    <Input id="edit-firstName" name="firstName" defaultValue={contact.firstName || ""} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-lastName">Last name</Label>
+                    <Input id="edit-lastName" name="lastName" defaultValue={contact.lastName || ""} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit-email">Email</Label>
+                  <Input id="edit-email" name="email" type="email" defaultValue={contact.email || ""} />
+                </div>
+                <div>
+                  <Label htmlFor="edit-phone">Phone</Label>
+                  <Input id="edit-phone" name="phone" defaultValue={contact.phone || ""} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-lifecycleStage">Stage</Label>
+                    <select
+                      id="edit-lifecycleStage"
+                      name="lifecycleStage"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      defaultValue={contact.lifecycleStage || "lead"}
+                    >
+                      {LIFECYCLE_STAGES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-nextFollowUpAt">Next follow-up</Label>
+                    <Input
+                      id="edit-nextFollowUpAt"
+                      name="nextFollowUpAt"
+                      type="date"
+                      defaultValue={
+                        contact.nextFollowUpAt
+                          ? new Date(contact.nextFollowUpAt).toISOString().slice(0, 10)
+                          : ""
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit-ownerUserId">Owner</Label>
+                  <select
+                    id="edit-ownerUserId"
+                    name="ownerUserId"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    defaultValue={contact.ownerUserId || ""}
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((u: any) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit">Save</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
         {canDelete && (
           <Button variant="destructive" size="sm" onClick={handleDelete}>
             <Trash2 className="h-4 w-4 mr-2" />

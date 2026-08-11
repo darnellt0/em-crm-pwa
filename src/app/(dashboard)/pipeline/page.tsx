@@ -33,6 +33,8 @@ export default function PipelinePage() {
   const { data, loading, refetch } = useApi<any>("/api/opportunities");
   const [createOpen, setCreateOpen] = useState(false);
   const [dragItem, setDragItem] = useState<string | null>(null);
+  const { data: contactsData } = useApi<any>(createOpen ? "/api/contacts?limit=200" : null);
+  const contacts = contactsData?.items || [];
 
   const opportunities = data?.opportunities || [];
 
@@ -93,6 +95,25 @@ export default function PipelinePage() {
               <DialogTitle>Create Opportunity</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <Label htmlFor="contactId">Contact</Label>
+                <select
+                  id="contactId"
+                  name="contactId"
+                  required
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select a contact…
+                  </option>
+                  {contacts.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {[c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unnamed contact"}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" name="name" required />

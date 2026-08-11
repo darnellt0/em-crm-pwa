@@ -1,27 +1,13 @@
 import { withAuth } from "next-auth/middleware";
-import { NextFetchEvent, NextRequest, NextResponse } from "next/server";
 
-const authMiddleware = withAuth({
+// Note: the Phase 5 import token is enforced inside
+// src/app/api/imports/cleaned-master/route.ts — the matcher below excludes
+// every /api path, so API auth never runs through this middleware.
+export default withAuth({
   pages: {
     signIn: "/auth/signin",
   },
 });
-
-export default function middleware(request: NextRequest, event: NextFetchEvent) {
-  const phase5Token = process.env.PHASE5_IMPORT_TOKEN?.trim();
-  const isPhase5Import = request.nextUrl.pathname === "/api/imports/cleaned-master";
-
-  if (
-    isPhase5Import &&
-    process.env.NODE_ENV !== "production" &&
-    phase5Token &&
-    request.headers.get("x-phase5-import-token") === phase5Token
-  ) {
-    return NextResponse.next();
-  }
-
-  return authMiddleware(request as never, event);
-}
 
 export const config = {
   matcher: [

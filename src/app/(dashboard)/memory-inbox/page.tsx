@@ -104,7 +104,7 @@ export default function MemoryInboxPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => handleBulkAction("approve_and_pin")}
+              onClick={() => handleBulkAction("approve_pin")}
               className="text-primary border-primary/30 hover:bg-primary/5"
             >
               <Pin className="h-3 w-3 mr-1" />
@@ -216,7 +216,7 @@ export default function MemoryInboxPage() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 text-primary hover:bg-primary/5"
-                    onClick={() => handleSingleAction(item.id, "approve_and_pin")}
+                    onClick={() => handleSingleAction(item.id, "approve_pin")}
                     title="Approve + Pin"
                   >
                     <Pin className="h-4 w-4" />

@@ -10,7 +10,6 @@ const EXPECTED_ROLE_CALLS: Record<string, string[]> = {
   "contacts/bulk/route.ts": ["staff", "partner_admin"],
   "dashboard/route.ts": ["read_only"],
   "enrollments/route.ts": ["staff"],
-  "imports/[jobId]/execute/route.ts": ["partner_admin"],
   "imports/[jobId]/map/route.ts": ["partner_admin"],
   "imports/[jobId]/rows/route.ts": ["partner_admin"],
   "imports/[jobId]/run/route.ts": ["partner_admin"],

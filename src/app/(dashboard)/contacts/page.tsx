@@ -295,8 +295,8 @@ export default function ContactsPage() {
     const form = new FormData(e.currentTarget);
     try {
       await apiPost("/api/contacts", {
-        firstName: form.get("firstName"),
-        lastName: form.get("lastName"),
+        firstName: form.get("firstName") || undefined,
+        lastName: form.get("lastName") || undefined,
         email: form.get("email") || undefined,
         phone: form.get("phone") || undefined,
         lifecycleStage: form.get("lifecycleStage") || "lead",

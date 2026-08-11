@@ -52,11 +52,12 @@ export async function POST(
           }
         }
 
-        // Build contact data
+        // Build contact data. Emails are stored lowercased so dedupe matches
+        // the cleaned-master import path and the case-sensitive unique index.
         const contactData: any = {
           firstName: normalized.firstName || null,
           lastName: normalized.lastName || null,
-          email: normalized.email || null,
+          email: normalized.email ? String(normalized.email).trim().toLowerCase() : null,
           phone: normalized.phone || null,
           phoneNormalized: normalizePhone(normalized.phone),
           persona: normalized.persona || null,
@@ -98,7 +99,9 @@ export async function POST(
         }
 
         if (existingContact) {
-          // Update existing contact — merge tags
+          // Update existing contact — merge, never erase. Only fields the CSV
+          // actually provided are written; anything absent or blank in the file
+          // keeps its existing value (matching the cleaned-master import path).
           const existing = await prisma.contact.findUnique({
             where: { id: existingContact.id },
             select: { tags: true },
@@ -106,9 +109,21 @@ export async function POST(
           const existingTags = (existing?.tags as string[]) || [];
           const mergedTags = Array.from(new Set([...existingTags, ...contactData.tags]));
 
+          const updateData: any = { tags: mergedTags };
+          if (contactData.firstName) updateData.firstName = contactData.firstName;
+          if (contactData.lastName) updateData.lastName = contactData.lastName;
+          if (contactData.email) updateData.email = contactData.email;
+          if (contactData.phone) {
+            updateData.phone = contactData.phone;
+            updateData.phoneNormalized = contactData.phoneNormalized;
+          }
+          if (contactData.persona) updateData.persona = contactData.persona;
+          if (normalized.source) updateData.source = contactData.source;
+          if (normalized.lifecycleStage) updateData.lifecycleStage = contactData.lifecycleStage;
+
           await prisma.contact.update({
             where: { id: existingContact.id },
-            data: { ...contactData, tags: mergedTags },
+            data: updateData,
           });
 
           await prisma.importRow.update({
