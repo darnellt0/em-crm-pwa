@@ -132,7 +132,7 @@ export default function ContactDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Permanently delete ${contact?.firstName} ${contact?.lastName}? This cannot be undone.`)) return;
+    if (!confirm(`Permanently delete ${contact?.firstName} ${contact?.lastName} — including their interactions, tasks, opportunities, invoices, and memories? This cannot be undone.`)) return;
     try {
       const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" });
       const json = await res.json();

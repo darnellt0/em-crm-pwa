@@ -144,8 +144,10 @@ export default function PipelinePage() {
             const stageOpps = opportunities.filter(
               (o: any) => o.stage === stage.key
             );
+            // Prisma Decimal values arrive as JSON strings — coerce before
+            // summing, or "+" concatenates ("1750" + "1250" = "17501250").
             const total = stageOpps.reduce(
-              (sum: number, o: any) => sum + (o.value || 0),
+              (sum: number, o: any) => sum + (Number(o.value) || 0),
               0
             );
 

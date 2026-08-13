@@ -17,6 +17,12 @@ import {
   Inbox,
 } from "lucide-react";
 
+const ACTION_LABELS: Record<string, string> = {
+  approve: "Approved",
+  approve_pin: "Approved and pinned",
+  reject: "Rejected",
+};
+
 export default function MemoryInboxPage() {
   const { data, loading, refetch } = useApi<any>("/api/memory/queue");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -52,7 +58,7 @@ export default function MemoryInboxPage() {
         action,
         ...extra,
       });
-      toast.success(`${action} completed for ${selected.size} items`);
+      toast.success(`${ACTION_LABELS[action] || action} ${selected.size} item${selected.size === 1 ? "" : "s"}`);
       setSelected(new Set());
       setRejectReason("");
       refetch();
@@ -68,7 +74,7 @@ export default function MemoryInboxPage() {
         action,
         ...extra,
       });
-      toast.success(`Memory ${action}d`);
+      toast.success(`${ACTION_LABELS[action] || action} 1 item`);
       refetch();
     } catch (err: any) {
       toast.error(err.message);
