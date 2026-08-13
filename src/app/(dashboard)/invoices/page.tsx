@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
+import { dateInputToIso, isoToDateInput } from "@/lib/dates";
 import { ContactPicker } from "@/components/crm/ContactPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,9 +48,6 @@ function formatAmount(amount: string | number) {
   );
 }
 
-function toDateInput(value?: string | null) {
-  return value ? new Date(value).toISOString().slice(0, 10) : "";
-}
 
 export default function InvoicesPage() {
   const { data: session } = useSession();
@@ -80,8 +78,8 @@ export default function InvoicesPage() {
         contactId: form.get("contactId"),
         amount: Number(form.get("amount")),
         status: form.get("status") || "draft",
-        issueDate: new Date(form.get("issueDate") as string).toISOString(),
-        dueDate: new Date(form.get("dueDate") as string).toISOString(),
+        issueDate: dateInputToIso(form.get("issueDate") as string),
+        dueDate: dateInputToIso(form.get("dueDate") as string),
         notes: form.get("notes") || undefined,
       });
       toast.success("Invoice created");
@@ -100,8 +98,8 @@ export default function InvoicesPage() {
       await apiPatch(`/api/invoices/${editInvoice.id}/edit`, {
         amount: Number(form.get("amount")),
         status: form.get("status"),
-        issueDate: new Date(form.get("issueDate") as string).toISOString(),
-        dueDate: new Date(form.get("dueDate") as string).toISOString(),
+        issueDate: dateInputToIso(form.get("issueDate") as string),
+        dueDate: dateInputToIso(form.get("dueDate") as string),
         notes: form.get("notes") || null,
         changeNote: form.get("changeNote") || undefined,
       });
@@ -187,7 +185,7 @@ export default function InvoicesPage() {
                     name="issueDate"
                     type="date"
                     required
-                    defaultValue={toDateInput(today.toISOString())}
+                    defaultValue={isoToDateInput(today.toISOString())}
                   />
                 </div>
                 <div>
@@ -357,7 +355,7 @@ export default function InvoicesPage() {
                     name="issueDate"
                     type="date"
                     required
-                    defaultValue={toDateInput(editInvoice.issueDate)}
+                    defaultValue={isoToDateInput(editInvoice.issueDate)}
                   />
                 </div>
                 <div>
@@ -367,7 +365,7 @@ export default function InvoicesPage() {
                     name="dueDate"
                     type="date"
                     required
-                    defaultValue={toDateInput(editInvoice.dueDate)}
+                    defaultValue={isoToDateInput(editInvoice.dueDate)}
                   />
                 </div>
               </div>

@@ -109,6 +109,14 @@ function parseTags(raw: string | null | undefined): string[] {
 
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
+  // Date-only strings ("2026-08-20") must become LOCAL midnight — parsing
+  // them with new Date() yields UTC midnight, which renders one day early
+  // in any timezone west of UTC.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

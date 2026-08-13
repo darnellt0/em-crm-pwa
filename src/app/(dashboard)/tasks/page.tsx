@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
+import { dateInputToIso } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,7 +56,7 @@ export default function TasksPage() {
         title: form.get("title"),
         description: form.get("description") || undefined,
         priority: form.get("priority") || "medium",
-        dueAt: form.get("dueAt") ? new Date(form.get("dueAt") as string).toISOString() : undefined,
+        dueAt: form.get("dueAt") ? dateInputToIso(form.get("dueAt") as string) : undefined,
       });
       toast.success("Task created");
       setCreateOpen(false);

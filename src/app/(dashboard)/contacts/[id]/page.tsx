@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
+import { dateInputToIso, isoToDateInput } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -120,7 +121,7 @@ export default function ContactDetailPage() {
         title: form.get("title"),
         description: form.get("description") || undefined,
         priority: form.get("priority") || "medium",
-        dueAt: form.get("dueAt") ? new Date(form.get("dueAt") as string).toISOString() : undefined,
+        dueAt: form.get("dueAt") ? dateInputToIso(form.get("dueAt") as string) : undefined,
       });
       toast.success("Task created");
       setTaskOpen(false);
@@ -157,7 +158,7 @@ export default function ContactDetailPage() {
         phone: form.get("phone") || null,
         lifecycleStage: form.get("lifecycleStage") || undefined,
         ownerUserId: form.get("ownerUserId") || null,
-        nextFollowUpAt: followUp ? new Date(followUp).toISOString() : null,
+        nextFollowUpAt: followUp ? dateInputToIso(followUp) : null,
       });
       toast.success("Contact updated");
       setEditOpen(false);
@@ -277,11 +278,7 @@ export default function ContactDetailPage() {
                       id="edit-nextFollowUpAt"
                       name="nextFollowUpAt"
                       type="date"
-                      defaultValue={
-                        contact.nextFollowUpAt
-                          ? new Date(contact.nextFollowUpAt).toISOString().slice(0, 10)
-                          : ""
-                      }
+                      defaultValue={isoToDateInput(contact.nextFollowUpAt)}
                     />
                   </div>
                 </div>
