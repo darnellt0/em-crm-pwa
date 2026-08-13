@@ -533,7 +533,7 @@ describe("nextFollowUpAt preservation", () => {
 
     expect(mockPrisma.contact.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ nextFollowUpAt: new Date("2026-09-15") }),
+        data: expect.objectContaining({ nextFollowUpAt: new Date(2026, 8, 15) }),
       })
     );
   });
