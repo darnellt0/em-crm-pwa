@@ -13,11 +13,26 @@ export function dateInputToIso(value: string): string {
   return new Date(year, month - 1, day).toISOString();
 }
 
-/** Stored ISO datetime → "YYYY-MM-DD" in local time, for input defaults. */
+/**
+ * Stored ISO datetime → "YYYY-MM-DD" for input defaults.
+ *
+ * Records created before local-midnight storage hold exactly UTC midnight
+ * (…T00:00:00.000Z). For those, the UTC calendar date is the intended date —
+ * reading it with local getters would prefill the form one day early, and
+ * saving any unrelated edit would then silently shift the stored date back
+ * a day. Everything else reads in local time.
+ */
 export function isoToDateInput(value: string | null | undefined): string {
   if (!value) return "";
   const date = new Date(value);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+  if (Number.isNaN(date.getTime())) return "";
+  const isLegacyUtcMidnight =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  const year = isLegacyUtcMidnight ? date.getUTCFullYear() : date.getFullYear();
+  const month = (isLegacyUtcMidnight ? date.getUTCMonth() : date.getMonth()) + 1;
+  const day = isLegacyUtcMidnight ? date.getUTCDate() : date.getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
