@@ -65,6 +65,12 @@ export async function DELETE(
       prisma.opportunity.deleteMany({ where: { contactId: id } }),
       prisma.enrollment.deleteMany({ where: { contactId: id } }),
       prisma.invoice.deleteMany({ where: { contactId: id } }), // revisions cascade
+      // Pending proposals for this contact can never execute once it is
+      // gone — close them out instead of leaving doomed approvable cards.
+      prisma.agentActionRequest.updateMany({
+        where: { contactId: id, status: "pending" },
+        data: { status: "rejected", error: "Contact was deleted before review" },
+      }),
       prisma.agentActionRequest.updateMany({
         where: { contactId: id },
         data: { contactId: null },
