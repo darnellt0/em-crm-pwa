@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
 import { requireUserOrInternalToken } from "@/lib/auth/requireUserOrInternalToken";
@@ -49,9 +50,42 @@ export async function DELETE(
 ) {
   try {
     await requireRole("partner_admin");
-    await prisma.contact.delete({ where: { id: (await params).id } });
+    const { id } = await params;
+
+    // Remove everything that references the contact in one transaction —
+    // several relations (interactions, opportunities, invoices, memories,
+    // enrollments) are required FKs without cascade, so a bare delete
+    // fails with a foreign-key error the moment a contact has history.
+    // Agent-action and import audit rows are kept, detached from the
+    // contact; campaign-sync receipts detach automatically (SetNull).
+    await prisma.$transaction([
+      prisma.aiMemoryItem.deleteMany({ where: { contactId: id } }), // embeddings cascade
+      prisma.interaction.deleteMany({ where: { contactId: id } }),
+      prisma.task.deleteMany({ where: { contactId: id } }),
+      prisma.opportunity.deleteMany({ where: { contactId: id } }),
+      prisma.enrollment.deleteMany({ where: { contactId: id } }),
+      prisma.invoice.deleteMany({ where: { contactId: id } }), // revisions cascade
+      // Pending proposals for this contact can never execute once it is
+      // gone — close them out instead of leaving doomed approvable cards.
+      prisma.agentActionRequest.updateMany({
+        where: { contactId: id, status: "pending" },
+        data: { status: "rejected", error: "Contact was deleted before review" },
+      }),
+      prisma.agentActionRequest.updateMany({
+        where: { contactId: id },
+        data: { contactId: null },
+      }),
+      prisma.importRow.updateMany({
+        where: { matchedContactId: id },
+        data: { matchedContactId: null },
+      }),
+      prisma.contact.delete({ where: { id } }),
+    ]);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
+    }
     return handleAuthError(error);
   }
 }
