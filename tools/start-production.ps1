@@ -61,7 +61,7 @@ if (-not (Test-DockerReady)) {
   }
 }
 
-docker compose up -d postgres mailhog n8n | Out-File -FilePath $logFile -Append
+docker compose up -d postgres n8n | Out-File -FilePath $logFile -Append
 
 $databaseReady = $false
 for ($attempt = 0; $attempt -lt 30; $attempt++) {

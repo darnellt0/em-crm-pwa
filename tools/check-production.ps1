@@ -21,7 +21,7 @@ try {
   Add-Check "CRM API" $false $_.Exception.Message
 }
 
-foreach ($container in @("em_postgres", "em_mailhog", "em_n8n")) {
+foreach ($container in @("em_postgres", "em_n8n")) {
   $running = docker inspect -f "{{.State.Running}}" $container 2>$null
   Add-Check $container ($running -eq "true") "running=$running"
 }
