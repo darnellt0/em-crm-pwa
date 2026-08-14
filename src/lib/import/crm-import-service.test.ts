@@ -7,6 +7,7 @@ const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
     user: { findMany: vi.fn() },
     contact: {
+      findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -39,6 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Default: no existing users, no existing orgs
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.contact.findMany.mockResolvedValue([]);
   // contact.findUnique: use mockImplementation so mockResolvedValueOnce in tests
   // is not overridden by a persistent mockResolvedValue default.
   mockPrisma.contact.findUnique.mockImplementation(async () => null);

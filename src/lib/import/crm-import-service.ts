@@ -15,6 +15,11 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizePhone } from "@/lib/phone/normalize";
+import {
+  normalizeCanonicalId,
+  planContactIdentityMatches,
+  type ContactMatchType,
+} from "@/lib/import/contact-match-planner";
 
 export interface CrmContactRow {
   firstName?: string;
@@ -50,7 +55,7 @@ export interface CrmImportRowResult {
   email: string;
   phone: string;
   action: "created" | "updated" | "skipped" | "error";
-  matchType?: "email" | "phone";
+  matchType?: ContactMatchType;
   matchedContactId?: string;
   reason?: string;
 }
@@ -69,6 +74,7 @@ export interface CrmImportSummary {
 }
 
 type NormalizedCrmContact = {
+  canonicalId: string | null;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
@@ -165,7 +171,13 @@ function leadScoreFromPriority(priority: string | null) {
 }
 
 function shouldSkip(contact: NormalizedCrmContact) {
-  return !contact.email && !contact.phoneNormalized && !contact.firstName && !contact.lastName;
+  return (
+    !contact.canonicalId &&
+    !contact.email &&
+    !contact.phoneNormalized &&
+    !contact.firstName &&
+    !contact.lastName
+  );
 }
 
 function rowWarning(contact: NormalizedCrmContact, error: unknown) {
@@ -178,6 +190,7 @@ type ImportDbClient = PrismaClient | Prisma.TransactionClient;
 
 const existingContactSelect = {
   id: true,
+  canonicalId: true,
   firstName: true,
   lastName: true,
   email: true,
@@ -197,13 +210,20 @@ const existingContactSelect = {
 type ExistingContact = Prisma.ContactGetPayload<{ select: typeof existingContactSelect }>;
 type ContactMatch = {
   contact: ExistingContact;
-  matchType: "email" | "phone";
+  matchType: ContactMatchType;
 };
 
-async function findExistingContact(
+async function findExistingContactFallback(
   prisma: ImportDbClient,
-  contact: NormalizedCrmContact
+  contact: NormalizedCrmContact,
 ): Promise<ContactMatch | null> {
+  if (contact.canonicalId) {
+    const byCanonicalId = await prisma.contact.findUnique({
+      where: { canonicalId: contact.canonicalId },
+      select: existingContactSelect,
+    });
+    if (byCanonicalId) return { contact: byCanonicalId, matchType: "canonicalId" };
+  }
   if (contact.email) {
     const byEmail = await prisma.contact.findUnique({
       where: { email: contact.email },
@@ -211,15 +231,21 @@ async function findExistingContact(
     });
     if (byEmail) return { contact: byEmail, matchType: "email" };
   }
-
   if (contact.phoneNormalized) {
-    const byPhone = await prisma.contact.findUnique({
-      where: { phoneNormalized: contact.phoneNormalized },
-      select: existingContactSelect,
-    });
+    const contactClient = prisma.contact as typeof prisma.contact & {
+      findFirst?: typeof prisma.contact.findFirst;
+    };
+    const byPhone = contactClient.findFirst
+      ? await contactClient.findFirst({
+          where: { phoneNormalized: contact.phoneNormalized },
+          select: existingContactSelect,
+        })
+      : await (contactClient as any).findUnique({
+          where: { phoneNormalized: contact.phoneNormalized },
+          select: existingContactSelect,
+        });
     if (byPhone) return { contact: byPhone, matchType: "phone" };
   }
-
   return null;
 }
 
@@ -242,6 +268,18 @@ export async function runCrmContactImport(
   opts: { dryRun?: boolean; importJobId?: string } = {}
 ): Promise<CrmImportSummary> {
   const dryRun = opts.dryRun === true;
+  const normalizedRows = rows.map(normalizeIncomingRow);
+  const existingContacts = await prisma.contact.findMany({ select: existingContactSelect });
+  const matchPlans = planContactIdentityMatches(normalizedRows, existingContacts);
+  const existingById = new Map(existingContacts.map((contact) => [contact.id, contact]));
+  const incomingPhoneCounts = new Map<string, number>();
+  for (const contact of normalizedRows) {
+    if (!contact.phoneNormalized) continue;
+    incomingPhoneCounts.set(
+      contact.phoneNormalized,
+      (incomingPhoneCounts.get(contact.phoneNormalized) ?? 0) + 1,
+    );
+  }
   const results: CrmImportRowResult[] = [];
   let created = 0;
   let updated = 0;
@@ -265,7 +303,7 @@ export async function runCrmContactImport(
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
-    const normalizedContact = normalizeIncomingRow(row);
+    const normalizedContact = normalizedRows[rowIndex];
 
     if (!normalizedContact.email && normalizedContact.phoneNormalized) {
       phoneOnlyRows += 1;
@@ -287,12 +325,27 @@ export async function runCrmContactImport(
     }
 
     try {
-      let match = await findExistingContact(prisma, normalizedContact);
+      const matchPlan = matchPlans[rowIndex];
+      if (matchPlan.conflict) throw new Error(matchPlan.conflict);
+      let match: ContactMatch | null = matchPlan.contactId
+        ? {
+            contact: existingById.get(matchPlan.contactId)!,
+            matchType: matchPlan.matchType!,
+          }
+        : null;
+      if (!match && existingContacts.length === 0) {
+        match = await findExistingContactFallback(prisma, normalizedContact);
+      }
       if (!match && dryRun && normalizedContact.email) {
         const previewContact = previewByEmail.get(normalizedContact.email);
         if (previewContact) match = { contact: previewContact, matchType: "email" };
       }
-      if (!match && dryRun && normalizedContact.phoneNormalized) {
+      if (
+        !match &&
+        dryRun &&
+        normalizedContact.phoneNormalized &&
+        incomingPhoneCounts.get(normalizedContact.phoneNormalized) === 1
+      ) {
         const previewContact = previewByPhone.get(normalizedContact.phoneNormalized);
         if (previewContact) match = { contact: previewContact, matchType: "phone" };
       }
@@ -314,6 +367,7 @@ export async function runCrmContactImport(
         if (dryRun) {
           rememberPreviewContact({
             ...existingContact,
+            canonicalId: normalizedContact.canonicalId ?? existingContact.canonicalId,
             firstName: normalizedContact.firstName ?? existingContact.firstName,
             lastName: normalizedContact.lastName ?? existingContact.lastName,
             email: normalizedContact.email ?? existingContact.email,
@@ -335,6 +389,7 @@ export async function runCrmContactImport(
               where: { id: existingContact.id },
               data: {
                 firstName: normalizedContact.firstName ?? existingContact.firstName ?? undefined,
+                canonicalId: normalizedContact.canonicalId ?? existingContact.canonicalId ?? undefined,
                 lastName: normalizedContact.lastName ?? existingContact.lastName ?? undefined,
                 email: normalizedContact.email ?? existingContact.email ?? undefined,
                 phone: normalizedContact.phone ?? existingContact.phone ?? undefined,
@@ -383,6 +438,7 @@ export async function runCrmContactImport(
         if (dryRun) {
           rememberPreviewContact({
             id: `preview-${rowIndex}`,
+            canonicalId: normalizedContact.canonicalId,
             firstName: normalizedContact.firstName,
             lastName: normalizedContact.lastName,
             email: normalizedContact.email,
@@ -403,6 +459,7 @@ export async function runCrmContactImport(
             const organizationId = await resolveOrganizationId(tx, normalizedContact.organization);
             const newContact = await tx.contact.create({
               data: {
+                canonicalId: normalizedContact.canonicalId ?? undefined,
                 firstName: normalizedContact.firstName ?? undefined,
                 lastName: normalizedContact.lastName ?? undefined,
                 email: normalizedContact.email ?? undefined,
@@ -515,6 +572,7 @@ function normalizeIncomingRow(row: CrmContactRow): NormalizedCrmContact {
   }
 
   return {
+    canonicalId: normalizeCanonicalId(canonicalId),
     firstName: row.firstName?.trim() || null,
     lastName: row.lastName?.trim() || null,
     email: normalizeEmail(row.email),
@@ -567,7 +625,7 @@ function buildNormalizedPayload(contact: NormalizedCrmContact, tags: string[]) {
     phoneNormalized: contact.phoneNormalized,
     tags,
     reviewStatus: contact.reviewStatus,
-    canonicalId: contact.metadata.canonicalId ?? null,
+    canonicalId: contact.canonicalId,
     metadataJson: contact.metadata,
     source: contact.source,
     lifecycleStage: contact.lifecycleStage

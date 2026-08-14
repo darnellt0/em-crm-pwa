@@ -33,6 +33,7 @@ const CRM_FIELDS = [
   { value: "lastName", label: "Last Name" },
   { value: "email", label: "Email" },
   { value: "phone", label: "Phone" },
+  { value: "canonicalId", label: "Canonical ID" },
   { value: "persona", label: "Persona" },
   { value: "lifecycleStage", label: "Lifecycle Stage" },
   { value: "source", label: "Source" },
@@ -54,14 +55,16 @@ interface ValidationSummary {
   willCreate: number;
   willUpdate: number;
   willSkip: number;
+  willError: number;
 }
 
 interface RowPreview {
   rowIndex: number;
-  action: "create" | "update" | "skip";
+  action: "create" | "update" | "skip" | "error";
   matchType: string | null;
   matchedContactName: string | null;
   normalized: Record<string, any>;
+  error: string | null;
 }
 
 export default function ImportPage() {
@@ -112,6 +115,7 @@ export default function ImportPage() {
         else if (lower.includes("last") && lower.includes("name")) autoMap[col] = "lastName";
         else if (lower.includes("email")) autoMap[col] = "email";
         else if (lower.includes("phone") || lower.includes("mobile")) autoMap[col] = "phone";
+        else if (lower === "canonicalid" || lower === "contactid") autoMap[col] = "canonicalId";
         else if (lower.includes("persona") || lower.includes("type")) autoMap[col] = "persona";
         else if (lower.includes("stage") || lower.includes("lifecycle")) autoMap[col] = "lifecycleStage";
         else if (lower.includes("source") || lower.includes("origin")) autoMap[col] = "source";
@@ -383,11 +387,12 @@ export default function ImportPage() {
               <CardTitle className="text-base">Deduplication Preview</CardTitle>
               <CardDescription>
                 Review what will happen when you run the import. Existing contacts
-                matched by email or phone will be updated instead of duplicated.
+                matched by canonical ID, email, or an unambiguous phone identity
+                will be updated instead of duplicated.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="text-center p-4 rounded-lg bg-muted/50">
                   <p className="text-2xl font-bold">{validation.total}</p>
                   <p className="text-sm text-muted-foreground">Total Rows</p>
@@ -404,7 +409,17 @@ export default function ImportPage() {
                   <p className="text-2xl font-bold text-amber-700">{validation.willSkip}</p>
                   <p className="text-sm text-amber-600">Will Skip</p>
                 </div>
+                <div className="text-center p-4 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-2xl font-bold text-red-700">{validation.willError}</p>
+                  <p className="text-sm text-red-600">Identity Errors</p>
+                </div>
               </div>
+
+              {validation.willError > 0 && (
+                <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                  Resolve the identity errors below before running this import.
+                </div>
+              )}
 
               {/* Row-level preview table */}
               <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
@@ -436,6 +451,8 @@ export default function ImportPage() {
                                 ? "bg-green-100 text-green-800"
                                 : row.action === "update"
                                 ? "bg-blue-100 text-blue-800"
+                                : row.action === "error"
+                                ? "bg-red-100 text-red-800"
                                 : "bg-amber-100 text-amber-800"
                             }
                           >
@@ -451,7 +468,9 @@ export default function ImportPage() {
                           {row.normalized.email || "—"}
                         </td>
                         <td className="p-2 text-muted-foreground hidden md:table-cell">
-                          {row.matchType ? (
+                          {row.error ? (
+                            <span className="text-red-700">{row.error}</span>
+                          ) : row.matchType ? (
                             <span>
                               Matched by {row.matchType}
                               {row.matchedContactName && (
@@ -475,7 +494,7 @@ export default function ImportPage() {
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Mapping
             </Button>
-            <Button onClick={handleRun} disabled={loading}>
+            <Button onClick={handleRun} disabled={loading || validation.willError > 0}>
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />

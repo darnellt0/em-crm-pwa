@@ -75,7 +75,8 @@ model Contact {
   lastName        String?
   email           String?       @unique
   phone           String?
-  phoneNormalized String?       @unique
+  phoneNormalized String?
+  canonicalId     String?       @unique
   persona         String?
   source          String?
   lifecycleStage  String        @default("lead")
