@@ -103,18 +103,8 @@ export async function POST(req: NextRequest) {
       for (const incoming of parsed.data.contacts) {
         const email = incoming.email.trim().toLowerCase();
         const existing = await tx.contact.findUnique({ where: { email } });
-        let phone = incoming.phone?.trim() || null;
-        let phoneNormalized = normalizePhone(phone);
-        if (phoneNormalized) {
-          const phoneOwner = await tx.contact.findUnique({
-            where: { phoneNormalized },
-            select: { id: true },
-          });
-          if (phoneOwner && phoneOwner.id !== existing?.id) {
-            phone = null;
-            phoneNormalized = null;
-          }
-        }
+        const phone = incoming.phone?.trim() || null;
+        const phoneNormalized = normalizePhone(phone);
 
         const existingTags = new Set(existing?.tags ?? []);
         existingTags.add("Campaign Studio");

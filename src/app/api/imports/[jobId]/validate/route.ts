@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
-import { normalizePhone } from "@/lib/phone/normalize";
+import { planContactIdentityMatches } from "@/lib/import/contact-match-planner";
+import {
+  applyImportMapping,
+  buildGenericImportContact,
+  hasGenericImportIdentity,
+} from "@/lib/import/generic-contact-import";
 
 /**
  * POST /api/imports/[jobId]/validate
  *
- * Dry-run deduplication preview. Reads all ImportRow entries for the job,
- * applies the saved mapping, and checks each row against existing contacts
- * by email or phoneNormalized. Returns a summary of what would happen
- * (create vs update vs skip) without touching the contacts table.
+ * Plans the complete batch before any writes. Matching priority is canonical
+ * ID, email, exact name + phone, then an unambiguous phone-only match.
  */
 export async function POST(
   _req: NextRequest,
-  { params }: { params: Promise<{ jobId: string }> }
+  { params }: { params: Promise<{ jobId: string }> },
 ) {
   try {
     await requireRole("partner_admin");
@@ -26,118 +29,88 @@ export async function POST(
     if (!job) {
       return NextResponse.json({ ok: false, error: "Import job not found" }, { status: 404 });
     }
-
     if (!job.mapping) {
-      return NextResponse.json({ ok: false, error: "Mapping not set. Call /map first." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Mapping not set. Call /map first." },
+        { status: 400 },
+      );
     }
 
     const mapping = job.mapping as Record<string, string | null>;
+    const preparedRows = job.rows.map((row) => {
+      const normalized = applyImportMapping(row.raw as Record<string, string>, mapping);
+      return { row, normalized, contact: buildGenericImportContact(normalized) };
+    });
+    const existingContacts = await prisma.contact.findMany({
+      select: {
+        id: true,
+        canonicalId: true,
+        email: true,
+        phoneNormalized: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+    const plans = planContactIdentityMatches(
+      preparedRows.map(({ contact }) => contact),
+      existingContacts,
+    );
+    const existingById = new Map(existingContacts.map((contact) => [contact.id, contact]));
 
     let willCreate = 0;
     let willUpdate = 0;
     let willSkip = 0;
-    const rowPreviews: Array<{
-      rowIndex: number;
-      action: "create" | "update" | "skip";
-      matchType: string | null;
-      matchedContactName: string | null;
-      normalized: Record<string, any>;
-    }> = [];
-
-    // Track contacts this file would create, so a second occurrence of the
-    // same email/phone previews as "update" — matching what the run step
-    // actually does when it processes rows sequentially.
-    const previewByEmail = new Map<string, string>();
-    const previewByPhone = new Map<string, string>();
-
-    for (const row of job.rows) {
-      const raw = row.raw as Record<string, string>;
-      const normalized: Record<string, any> = {};
-
-      // Apply mapping
-      for (const [csvCol, crmField] of Object.entries(mapping)) {
-        if (crmField && crmField !== "skip" && raw[csvCol] !== undefined) {
-          normalized[crmField] = raw[csvCol];
-        }
-      }
-
-      // Check if we have enough data
-      const hasEmail = !!normalized.email;
-      const hasPhone = !!normalized.phone;
-      const hasName = !!normalized.firstName || !!normalized.lastName;
-
-      if (!hasEmail && !hasPhone && !hasName) {
-        willSkip++;
-        rowPreviews.push({
+    let willError = 0;
+    const rowPreviews = preparedRows.map(({ row, normalized, contact }, index) => {
+      if (!hasGenericImportIdentity(contact)) {
+        willSkip += 1;
+        return {
           rowIndex: row.rowIndex,
-          action: "skip",
+          action: "skip" as const,
           matchType: null,
           matchedContactName: null,
+          error: null,
           normalized,
-        });
-        continue;
+        };
       }
 
-      // Dedupe check
-      let existingContact: any = null;
-      let matchType: string | null = null;
-      const emailKey = hasEmail ? String(normalized.email).trim().toLowerCase() : null;
-      const phoneNorm = hasPhone ? normalizePhone(normalized.phone) : null;
-
-      if (emailKey) {
-        // Case-insensitive so mixed-case stored emails still match (same as run).
-        existingContact = await prisma.contact.findFirst({
-          where: { email: { equals: emailKey, mode: "insensitive" } },
-          select: { id: true, firstName: true, lastName: true },
-        });
-        if (existingContact) matchType = "email";
-        if (!existingContact && previewByEmail.has(emailKey)) {
-          existingContact = { firstName: previewByEmail.get(emailKey), lastName: null };
-          matchType = "email";
-        }
-      }
-
-      if (!existingContact && phoneNorm) {
-        existingContact = await prisma.contact.findUnique({
-          where: { phoneNormalized: phoneNorm },
-          select: { id: true, firstName: true, lastName: true },
-        });
-        if (existingContact) matchType = "phone";
-        if (!existingContact && previewByPhone.has(phoneNorm)) {
-          existingContact = { firstName: previewByPhone.get(phoneNorm), lastName: null };
-          matchType = "phone";
-        }
-      }
-
-      if (existingContact) {
-        willUpdate++;
-        const name = [existingContact.firstName, existingContact.lastName]
-          .filter(Boolean)
-          .join(" ");
-        rowPreviews.push({
+      const plan = plans[index];
+      if (plan.conflict) {
+        willError += 1;
+        return {
           rowIndex: row.rowIndex,
-          action: "update",
-          matchType,
-          matchedContactName: name || null,
-          normalized,
-        });
-      } else {
-        willCreate++;
-        const previewName =
-          [normalized.firstName, normalized.lastName].filter(Boolean).join(" ") ||
-          emailKey ||
-          "(new contact from this file)";
-        if (emailKey) previewByEmail.set(emailKey, previewName);
-        if (phoneNorm) previewByPhone.set(phoneNorm, previewName);
-        rowPreviews.push({
-          rowIndex: row.rowIndex,
-          action: "create",
+          action: "error" as const,
           matchType: null,
           matchedContactName: null,
+          error: plan.conflict,
           normalized,
-        });
+        };
       }
-    }
+
+      if (plan.contactId) {
+        willUpdate += 1;
+        const matched = existingById.get(plan.contactId);
+        return {
+          rowIndex: row.rowIndex,
+          action: "update" as const,
+          matchType: plan.matchType,
+          matchedContactName:
+            [matched?.firstName, matched?.lastName].filter(Boolean).join(" ") || null,
+          error: null,
+          normalized,
+        };
+      }
+
+      willCreate += 1;
+      return {
+        rowIndex: row.rowIndex,
+        action: "create" as const,
+        matchType: null,
+        matchedContactName: null,
+        error: null,
+        normalized,
+      };
+    });
 
     return NextResponse.json({
       ok: true,
@@ -146,6 +119,7 @@ export async function POST(
         willCreate,
         willUpdate,
         willSkip,
+        willError,
       },
       rows: rowPreviews,
     });
