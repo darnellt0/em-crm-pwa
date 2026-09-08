@@ -149,6 +149,14 @@ The CRM exposes dedicated token-authenticated endpoints at `/api/internal/campai
 
 Campaign Studio incrementally reads relationship fields from CRM and sends opted-in contacts plus campaign events back. Event IDs are stored in `CampaignSyncReceipt`, making event retries idempotent. Bounce, complaint, and unsubscribe events add `Do Not Market` tags and stop follow-up activity in CRM. Set `CAMPAIGN_SYNC_DEFAULT_OWNER_EMAIL` when contacts created by Campaign Studio should automatically belong to a specific CRM user.
 
+**Phone-only contacts and SMS consent.** Sunday Seeds is SMS-first, so the sync also carries contacts that have a phone but no email:
+
+- `GET /contacts` exports every contact with an email **or** a `phoneNormalized`. Each row includes `phoneNormalized` plus SMS state derived from tags: `smsOptedOut` (has `Do Not Text`), `smsConsentGiven` (has `SMS Opt-In` and not opted out), and `smsConsentSource` (`"crm:tag"` or `null`). `email` may be `null`.
+- `POST /contacts` accepts `email` **or** `phone`/`phoneNormalized`, plus optional `smsConsentGiven`, `smsOptedOut`, `smsConsentAt`, and up to 20 verbatim `tags`. Contacts are matched by lowercased email, then by a unique `phoneNormalized`, otherwise created. Every synced contact gets the `Campaign Studio` tag; `consentGiven` adds `Marketing Consent`.
+- `POST /events` accepts `SMS_SENT`, `SMS_FAILED`, `SMS_OPT_OUT`, and `SMS_OPT_IN` alongside the email event types, and can identify the contact by `phone`. SMS events log an `sms` interaction; `SMS_OPT_OUT` adds `Do Not Text` and removes `SMS Opt-In`; `SMS_OPT_IN` adds `SMS Opt-In`.
+
+The consent rule is **`Do Not Text` wins over opt-in**: the CRM is the system of record for that tag, sync never removes it, and an inbound opt-in (field, tag, or event) is ignored while it is present.
+
 ## Role Hierarchy
 
 | Role | Permissions |

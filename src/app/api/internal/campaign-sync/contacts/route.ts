@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db/prisma";
 import { normalizePhone } from "@/lib/phone/normalize";
 import { requireCampaignSyncToken } from "@/lib/auth/requireCampaignSyncToken";
 import {
+  applySmsConsentTags,
   decodeCampaignSyncCursor,
   deriveCampaignMarketingState,
+  deriveSmsState,
   encodeCampaignSyncCursor,
 } from "@/lib/campaignSync";
 import { CampaignContactBatchSchema } from "@/lib/validations/campaignSync";
@@ -21,18 +23,23 @@ export async function GET(req: NextRequest) {
     const cursorValue = req.nextUrl.searchParams.get("cursor");
     const cursor = cursorValue ? decodeCampaignSyncCursor(cursorValue) : null;
     const where: Prisma.ContactWhereInput = {
-      email: { not: null },
-      ...(cursor
-        ? {
-            OR: [
-              { updatedAt: { gt: new Date(cursor.updatedAt) } },
+      AND: [
+        // Reachable by at least one channel: email campaigns or SMS.
+        { OR: [{ email: { not: null } }, { phoneNormalized: { not: null } }] },
+        ...(cursor
+          ? [
               {
-                updatedAt: new Date(cursor.updatedAt),
-                id: { gt: cursor.id },
+                OR: [
+                  { updatedAt: { gt: new Date(cursor.updatedAt) } },
+                  {
+                    updatedAt: new Date(cursor.updatedAt),
+                    id: { gt: cursor.id },
+                  },
+                ],
               },
-            ],
-          }
-        : {}),
+            ]
+          : []),
+      ],
     };
 
     const rows = await prisma.contact.findMany({
@@ -43,6 +50,7 @@ export async function GET(req: NextRequest) {
         firstName: true,
         lastName: true,
         phone: true,
+        phoneNormalized: true,
         source: true,
         lifecycleStage: true,
         tags: true,
@@ -63,11 +71,13 @@ export async function GET(req: NextRequest) {
         firstName: contact.firstName,
         lastName: contact.lastName,
         phone: contact.phone,
+        phoneNormalized: contact.phoneNormalized,
         source: contact.source,
         lifecycleStage: contact.lifecycleStage,
         tags: contact.tags,
         updatedAt: contact.updatedAt.toISOString(),
         ...deriveCampaignMarketingState(contact),
+        ...deriveSmsState(contact),
       })),
       hasMore,
       nextCursor: last
@@ -101,15 +111,28 @@ export async function POST(req: NextRequest) {
       const results: { externalContactId: string; crmContactId: string }[] = [];
 
       for (const incoming of parsed.data.contacts) {
-        const email = incoming.email.trim().toLowerCase();
-        const existing = await tx.contact.findUnique({ where: { email } });
+        const email = incoming.email?.trim().toLowerCase() || null;
         const phone = incoming.phone?.trim() || null;
-        const phoneNormalized = normalizePhone(phone);
+        const phoneNormalized = normalizePhone(phone ?? incoming.phoneNormalized);
 
-        const existingTags = new Set(existing?.tags ?? []);
-        existingTags.add("Campaign Studio");
-        if (incoming.consentGiven) existingTags.add("Marketing Consent");
-        const isSuppressed = existingTags.has("Do Not Market");
+        // Matching order: lowercased email, then a unique phoneNormalized
+        // match, else create. The phone fallback is skipped when it would
+        // pair an incoming email with a contact that already owns a
+        // different email (two people sharing a number must stay separate).
+        let existing = email ? await tx.contact.findUnique({ where: { email } }) : null;
+        if (!existing && phoneNormalized) {
+          const byPhone = await tx.contact.findMany({ where: { phoneNormalized }, take: 2 });
+          const candidate = byPhone.length === 1 ? byPhone[0] : null;
+          if (candidate && (!email || !candidate.email)) existing = candidate;
+        }
+
+        const tags = new Set(existing?.tags ?? []);
+        tags.add("Campaign Studio");
+        if (incoming.consentGiven) tags.add("Marketing Consent");
+        for (const tag of incoming.tags ?? []) tags.add(tag);
+        applySmsConsentTags(tags, incoming);
+
+        const isSuppressed = tags.has("Do Not Market");
         const lifecycleStage =
           existing && existing.lifecycleStage !== "lead"
             ? existing.lifecycleStage
@@ -120,15 +143,20 @@ export async function POST(req: NextRequest) {
         const data = {
           firstName: incoming.firstName?.trim() || existing?.firstName || null,
           lastName: incoming.lastName?.trim() || existing?.lastName || null,
-          phone: phone ?? existing?.phone ?? null,
+          // Fall back to the E.164 value so a phoneNormalized-only contact still shows a number.
+          phone: phone ?? existing?.phone ?? phoneNormalized ?? null,
           phoneNormalized: phoneNormalized ?? existing?.phoneNormalized ?? null,
           source: incoming.source?.trim() || existing?.source || "Campaign Studio",
           lifecycleStage,
-          tags: Array.from(existingTags),
+          tags: Array.from(tags),
         };
 
         const contact = existing
-          ? await tx.contact.update({ where: { id: existing.id }, data })
+          ? await tx.contact.update({
+              where: { id: existing.id },
+              // A phone-matched contact learns its email; an existing email is never cleared.
+              data: { ...data, ...(email && !existing.email ? { email } : {}) },
+            })
           : await tx.contact.create({
               data: {
                 email,
