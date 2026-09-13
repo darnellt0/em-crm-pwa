@@ -95,13 +95,27 @@ async function main() {
       phone: pick(row, "cell phone number", "phone", "mobile"),
       phoneNormalized: phone,
       source: existing?.source ?? "Sunday Seeds",
-      tags: Array.from(tags),
-      notes: consented ? [existing?.notes, `SMS consent: ${method}`].filter(Boolean).join("\n") : existing?.notes ?? null
+      tags: Array.from(tags)
     };
 
     if (apply) {
-      if (existing) await prisma.contact.update({ where: { id: existing.id }, data });
-      else await prisma.contact.create({ data: { ...data, email: null } });
+      const contact = existing
+        ? await prisma.contact.update({ where: { id: existing.id }, data })
+        : await prisma.contact.create({ data: { ...data, email: null } });
+      // How consent was obtained is evidence, so it is logged as an interaction
+      // on the contact rather than buried in a free-text field.
+      if (consented || optedOut) {
+        await prisma.interaction.create({
+          data: {
+            contactId: contact.id,
+            type: "sms",
+            summary: optedOut
+              ? "Marked Do Not Text during the Sunday Seeds list import."
+              : `Recorded SMS consent for Sunday Seeds (${method}).`,
+            outcome: optedOut ? "sms_opt_out" : "sms_opt_in"
+          }
+        });
+      }
     }
     if (existing) summary.updated += 1; else summary.created += 1;
   }
