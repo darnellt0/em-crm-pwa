@@ -62,3 +62,7 @@ mobile/www
 
 # Backups
 backups/
+
+# Never commit environment backups (they contain live secrets)
+.env.bak*
+.env.*.bak
