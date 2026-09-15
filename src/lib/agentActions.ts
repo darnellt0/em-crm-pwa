@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { advanceLastTouch } from "@/lib/interactions";
 import {
   AgentActionPayload,
   AgentActionPayloadSchema,
@@ -189,6 +190,7 @@ export async function executeAgentAction(
     }
     case "log_interaction": {
       const occurredAt = action.occurredAt ? new Date(action.occurredAt) : new Date();
+      if (occurredAt > new Date()) throw new Error("Cannot log future activity; create a task instead");
       const interaction = await tx.interaction.create({
         data: {
           contactId: action.contactId,
@@ -200,10 +202,7 @@ export async function executeAgentAction(
         },
         select: { id: true, type: true },
       });
-      await tx.contact.update({
-        where: { id: action.contactId },
-        data: { lastTouchAt: new Date() },
-      });
+      await advanceLastTouch(tx, action.contactId, action.type, occurredAt);
       return { entityType: "interaction", entityId: interaction.id, type: interaction.type };
     }
     case "set_follow_up": {

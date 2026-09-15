@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { handleAuthError, requireRole } from "@/lib/auth/requireRole";
 import { CreateInteractionSchema } from "@/lib/validations/interaction";
 import { extractMemoryProposals } from "@/lib/ai/ollama";
+import { advanceLastTouch } from "@/lib/interactions";
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,21 +18,23 @@ export async function POST(req: NextRequest) {
 
     const data = parsed.data;
 
-    const interaction = await prisma.interaction.create({
+    const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
+    if (occurredAt > new Date()) {
+      return NextResponse.json({ ok: false, error: "Log completed activity only; use a task for future activity." }, { status: 400 });
+    }
+    const interaction = await prisma.$transaction(async (tx) => {
+      const created = await tx.interaction.create({
       data: {
         contactId: data.contactId,
         type: data.type,
         summary: data.summary,
         outcome: data.outcome,
-        occurredAt: data.occurredAt ? new Date(data.occurredAt) : new Date(),
+        occurredAt,
         createdByUserId: userId,
       },
-    });
-
-    // Update contact lastTouchAt
-    await prisma.contact.update({
-      where: { id: data.contactId },
-      data: { lastTouchAt: new Date() },
+      });
+      await advanceLastTouch(tx, data.contactId, data.type, occurredAt);
+      return created;
     });
 
     // Trigger AI memory extraction in background (non-blocking)

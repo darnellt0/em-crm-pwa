@@ -31,6 +31,7 @@ const navItems: Array<{
 }> = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/leads", label: "Lead tracking", icon: Users },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/invoices", label: "Invoices", icon: Receipt },

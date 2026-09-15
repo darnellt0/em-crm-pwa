@@ -81,6 +81,10 @@ model Contact {
   source          String?
   lifecycleStage  String        @default("lead")
   leadScore       Int           @default(0)
+  // Sales qualification is independent of lifecycle/marketing consent.
+  leadStatus      String        @default("unreviewed")
+  leadNextAction  String?
+  leadReviewedAt  DateTime?
   tags            String[]      @default([])
   lastTouchAt     DateTime?
   nextFollowUpAt  DateTime?
@@ -105,6 +109,7 @@ model Contact {
   @@index([email])
   @@index([phoneNormalized])
   @@index([lifecycleStage])
+  @@index([leadStatus, nextFollowUpAt])
   @@index([ownerUserId])
   @@index([nextFollowUpAt])
 }

@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId } = await requireRole("read_only");
+    const { userId, role } = await requireRole("read_only");
     const url = req.nextUrl;
     const ownerFilter = url.searchParams.get("owner");
     const statusFilter = url.searchParams.get("status");
@@ -45,13 +45,14 @@ export async function GET(req: NextRequest) {
     const tasks = await prisma.task.findMany({
       where,
       include: {
-        contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+        contact: { select: { id: true, firstName: true, lastName: true, email: true, updatedAt: true, leadNextAction: true, nextFollowUpAt: true, leadStatus: true, ownerUserId: true } },
         owner: { select: { id: true, name: true, email: true } },
       },
       orderBy: [{ dueAt: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
     });
 
-    return NextResponse.json({ ok: true, tasks });
+    const users = role === "read_only" ? [] : await prisma.user.findMany({ select: { id: true, name: true, email: true } });
+    return NextResponse.json({ ok: true, tasks, users, canEdit: role !== "read_only" });
   } catch (error) {
     return handleAuthError(error);
   }
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
     const task = await prisma.task.create({
       data: {
         contactId: data.contactId,
-        ownerUserId: userId,
+        ownerUserId: data.ownerUserId || userId,
         title: data.title,
         description: data.description,
         priority: data.priority || "medium",

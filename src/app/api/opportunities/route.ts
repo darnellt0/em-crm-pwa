@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
-import { z } from "zod";
-
-const CreateOpportunitySchema = z.object({
-  contactId: z.string().uuid(),
-  name: z.string().min(1).max(200),
-  value: z.number().positive().optional().nullable(),
-  stage: z.string().min(1).max(50).default("discovery"),
-  closeDate: z.string().datetime().optional().nullable(),
-});
+import { CreateOpportunitySchema } from "@/lib/validations/opportunity";
 
 export async function GET(req: NextRequest) {
   try {

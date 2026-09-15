@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useApi, apiPost, apiPatch } from "@/hooks/useApi";
 import { dateInputToIso } from "@/lib/dates";
+import { ContactPicker } from "@/components/crm/ContactPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,19 +41,25 @@ const priorityColors: Record<string, string> = {
 export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState("open");
   const [createOpen, setCreateOpen] = useState(false);
+  const [completing, setCompleting] = useState<any>(null);
+  const [followChoice, setFollowChoice] = useState("keep");
+  const [saving, setSaving] = useState(false);
 
   const params = new URLSearchParams();
   if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
 
-  const { data, loading, refetch } = useApi<any>(`/api/tasks?${params.toString()}`);
+  const { data, loading, error, refetch } = useApi<any>(`/api/tasks?${params.toString()}`);
 
   const tasks = data?.tasks || [];
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    setSaving(true);
     try {
       await apiPost("/api/tasks", {
+        contactId: form.get("contactId") || null,
+        ownerUserId: form.get("ownerUserId") || undefined,
         title: form.get("title"),
         description: form.get("description") || undefined,
         priority: form.get("priority") || "medium",
@@ -63,10 +70,28 @@ export default function TasksPage() {
       refetch();
     } catch (err: any) {
       toast.error(err.message);
-    }
+    } finally { setSaving(false); }
+  };
+
+  const handleComplete = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    setSaving(true);
+    try {
+      await apiPatch(`/api/tasks/${completing.id}`, { status: "done", followThrough: {
+        choice: followChoice, expectedContactUpdatedAt: completing.contact.updatedAt,
+        note: form.get("note"),
+        ...(followChoice === "schedule" ? { nextAction: form.get("nextAction"), nextFollowUpAt: dateInputToIso(String(form.get("nextFollowUpAt"))) } : {}),
+        ...(followChoice === "clear" ? { leadStatus: form.get("leadStatus") } : {}),
+      } });
+      toast.success("Task completed and follow-up reviewed"); setCompleting(null); refetch();
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
   };
 
   const handleToggle = async (taskId: string, currentStatus: string) => {
+    const task = tasks.find((t: any) => t.id === taskId);
+    if (currentStatus !== "done" && task?.contact) { setFollowChoice("keep"); setCompleting(task); return; }
+    setSaving(true);
     try {
       await apiPatch(`/api/tasks/${taskId}`, {
         status: currentStatus === "done" ? "todo" : "done",
@@ -74,7 +99,7 @@ export default function TasksPage() {
       refetch();
     } catch (err: any) {
       toast.error(err.message);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -86,7 +111,7 @@ export default function TasksPage() {
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!data?.canEdit}>
               <Plus className="h-4 w-4 mr-2" />
               New Task
             </Button>
@@ -96,6 +121,8 @@ export default function TasksPage() {
               <DialogTitle>Create Task</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
+              <div><Label htmlFor="task-contact">Contact (optional)</Label>{createOpen && <ContactPicker id="task-contact" name="contactId" />}</div>
+              <div><Label htmlFor="task-owner">Assigned to</Label><select id="task-owner" name="ownerUserId" className="w-full rounded border p-2" defaultValue=""><option value="">Me</option>{(data?.users || []).map((user: any) => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}</select></div>
               <div>
                 <Label htmlFor="title">Title</Label>
                 <Input id="title" name="title" required />
@@ -128,12 +155,26 @@ export default function TasksPage() {
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button type="submit">Create</Button>
+                <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Create"}</Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      <Dialog open={!!completing} onOpenChange={open => { if (!open && !saving) setCompleting(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>Complete task and review follow-up</DialogTitle></DialogHeader>
+          <form onSubmit={handleComplete} className="space-y-4">
+            <p>{completing?.title}</p>
+            <p className="text-sm text-muted-foreground">Current next step: {completing?.contact?.leadNextAction || "Not set"}. This review is an internal note, not evidence that a meeting occurred.</p>
+            <div><Label htmlFor="completion-note">Outcome or reason</Label><Textarea id="completion-note" name="note" required minLength={5} maxLength={1500} /></div>
+            <div><Label htmlFor="follow-choice">What happens next?</Label><select id="follow-choice" value={followChoice} onChange={e => setFollowChoice(e.target.value)} className="w-full rounded border p-2"><option value="keep">Keep the existing follow-up unchanged</option><option value="schedule">Set the next step and create its task</option><option value="clear">Clear follow-up and review lead status</option></select></div>
+            {followChoice === "schedule" && <><div><Label htmlFor="next-action">Next action</Label><Input id="next-action" name="nextAction" required maxLength={200} /></div><div><Label htmlFor="next-date">Internal follow-up date</Label><Input id="next-date" name="nextFollowUpAt" type="date" required /></div><p className="text-sm">Assigned to the contact’s owner. No message will be sent.</p></>}
+            {followChoice === "clear" && <div><Label htmlFor="completion-lead-status">Lead status</Label><select id="completion-lead-status" name="leadStatus" required className="w-full rounded border p-2" defaultValue=""><option value="" disabled>Choose a status</option><option value="unreviewed">Needs review</option><option value="nurture">Nurture</option><option value="disqualified">Not a fit</option></select></div>}
+            <DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setCompleting(null)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Complete and save"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Select value={statusFilter} onValueChange={setStatusFilter}>
         <SelectTrigger className="w-[160px]">
@@ -146,7 +187,7 @@ export default function TasksPage() {
         </SelectContent>
       </Select>
 
-      {loading ? (
+      {error ? <p role="alert" className="text-destructive">Could not load tasks. {error}</p> : loading ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="h-16 animate-pulse bg-muted rounded" />
@@ -171,6 +212,8 @@ export default function TasksPage() {
               <Card key={t.id} className={isOverdue ? "border-destructive/30" : ""}>
                 <CardContent className="flex items-center gap-3 py-3">
                   <Checkbox
+                    aria-label={`Complete ${t.title}`}
+                    disabled={saving || !data?.canEdit}
                     checked={t.status === "done"}
                     onCheckedChange={() => handleToggle(t.id, t.status)}
                   />
@@ -182,6 +225,8 @@ export default function TasksPage() {
                     >
                       {t.title}
                     </p>
+                    {t.description && <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{t.description}</p>}
+                    <p className="text-sm text-muted-foreground">Owner: {t.owner?.name || t.owner?.email || "Unassigned"}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       {t.contact && (
                         <Link

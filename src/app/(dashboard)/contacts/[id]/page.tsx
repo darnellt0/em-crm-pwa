@@ -91,7 +91,6 @@ export default function ContactDetailPage() {
   const overdueTasks = openTasks.filter(
     (t: any) => t.dueAt && new Date(t.dueAt) < new Date()
   );
-  const lastInteraction = interactions[0];
 
   const handleAddInteraction = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -102,8 +101,9 @@ export default function ContactDetailPage() {
         type: form.get("type"),
         summary: form.get("summary"),
         outcome: form.get("outcome") || undefined,
+        occurredAt: form.get("occurredAt") ? new Date(String(form.get("occurredAt"))).toISOString() : undefined,
       });
-      toast.success("Interaction logged. AI memory extraction triggered.");
+      toast.success("Activity saved. Internal notes do not change the last-contact date.");
       setInteractionOpen(false);
       refetchInteractions();
       refetch();
@@ -291,6 +291,9 @@ export default function ContactDetailPage() {
                     defaultValue={contact.ownerUserId || ""}
                   >
                     <option value="">Unassigned</option>
+                    {contact.ownerUserId && !users.some((u: any) => u.id === contact.ownerUserId) && (
+                      <option value={contact.ownerUserId}>{contact.owner?.name || contact.owner?.email || "Current owner"}</option>
+                    )}
                     {users.map((u: any) => (
                       <option key={u.id} value={u.id}>
                         {u.name || u.email}
@@ -319,6 +322,10 @@ export default function ContactDetailPage() {
       </div>
 
       {/* Next Action Banner */}
+      <div className="rounded-lg border p-4 text-sm">
+        <Link href="/leads" className="font-medium text-primary hover:underline">Lead tracking</Link>
+        <p className="mt-1">Status: {contact.leadStatus === "active" ? "Active lead" : contact.leadStatus === "nurture" ? "Nurture" : contact.leadStatus === "disqualified" ? "Not a fit" : "Needs review"} · Next action: {contact.leadNextAction || "Not set"}</p>
+      </div>
       {(overdueTasks.length > 0 || contact.nextFollowUpAt) && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
           {overdueTasks.length > 0 ? (
@@ -379,9 +386,9 @@ export default function ContactDetailPage() {
                 Org: {contact.organization.name}
               </div>
             )}
-            {lastInteraction && (
+            {contact.lastTouchAt && (
               <div className="text-xs text-muted-foreground pt-1 border-t">
-                Last touch: {new Date(lastInteraction.occurredAt).toLocaleDateString()}
+                Last contact: {new Date(contact.lastTouchAt).toLocaleDateString()}
               </div>
             )}
           </CardContent>
@@ -490,6 +497,11 @@ export default function ContactDetailPage() {
                       <option value="sms">SMS</option>
                       <option value="other">Other</option>
                     </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="occurredAt">Activity date and time (local)</Label>
+                    <Input id="occurredAt" name="occurredAt" type="datetime-local" />
+                    <p className="text-xs text-muted-foreground">Leave blank for now. Log only completed activity; use a task for planned meetings.</p>
                   </div>
                   <div>
                     <Label htmlFor="summary">Summary</Label>
@@ -610,10 +622,10 @@ export default function ContactDetailPage() {
               {tasks.map((t: any) => (
                 <Card key={t.id}>
                   <CardContent className="flex items-center gap-3 py-3">
-                    <Checkbox
+                    {t.status !== "done" ? <Link href="/tasks" className="text-sm text-primary underline">Complete &amp; review</Link> : <Checkbox
                       checked={t.status === "done"}
                       onCheckedChange={() => handleCompleteTask(t.id)}
-                    />
+                    />}
                     <div className="flex-1">
                       <p className={`text-sm font-medium ${t.status === "done" ? "line-through text-muted-foreground" : ""}`}>
                         {t.title}

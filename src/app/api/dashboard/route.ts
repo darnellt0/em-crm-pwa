@@ -54,7 +54,7 @@ export async function GET() {
       prisma.task.count({ where: { dueAt: { lt: now }, status: { not: "done" } } }),
       prisma.task.count({ where: { dueAt: { gte: todayStart, lte: todayEnd }, status: { not: "done" } } }),
       prisma.aiMemoryItem.count({ where: { status: "proposed" } }),
-      prisma.opportunity.count({ where: { stage: { not: "closed_won" } } }),
+      prisma.opportunity.count({ where: { stage: { notIn: ["closed_won", "closed_lost"] } } }),
       prisma.opportunity.aggregate({
         _sum: { value: true },
         where: { stage: { notIn: ["closed_won", "closed_lost"] } },
@@ -65,7 +65,7 @@ export async function GET() {
         _sum: { value: true },
       }),
       prisma.interaction.count({ where: { occurredAt: { gte: weekAgo } } }),
-      prisma.contact.count({ where: { nextFollowUpAt: { lt: now } } }),
+      prisma.contact.count({ where: { nextFollowUpAt: { lt: todayStart } } }),
       prisma.contact.count({ where: { nextFollowUpAt: { gte: todayStart, lte: todayEnd } } }),
       prisma.contact.groupBy({ by: ["lifecycleStage"], _count: { id: true } }),
       prisma.interaction.findMany({
@@ -99,7 +99,7 @@ export async function GET() {
 
     // Overdue follow-up contacts (up to 10 for Today's Focus)
     const overdueFollowUpContacts = await prisma.contact.findMany({
-      where: { nextFollowUpAt: { lt: now } },
+      where: { nextFollowUpAt: { lt: todayStart } },
       select: { id: true, firstName: true, lastName: true, email: true, lifecycleStage: true, nextFollowUpAt: true },
       orderBy: { nextFollowUpAt: "asc" },
       take: 10,

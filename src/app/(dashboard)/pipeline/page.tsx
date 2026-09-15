@@ -20,6 +20,8 @@ import { toast } from "sonner";
 import { Plus, DollarSign, GripVertical } from "lucide-react";
 import Link from "next/link";
 import { ContactPicker } from "@/components/crm/ContactPicker";
+import { dateInputToIso } from "@/lib/dates";
+import { useSession } from "next-auth/react";
 
 const STAGES = [
   { key: "discovery", label: "Discovery", color: "bg-blue-500" },
@@ -31,32 +33,41 @@ const STAGES = [
 ];
 
 export default function PipelinePage() {
-  const { data, loading, refetch } = useApi<any>("/api/opportunities");
+  const { data, loading, error, refetch } = useApi<any>("/api/opportunities");
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const canEdit = role === "admin" || role === "partner_admin" || role === "staff";
   const [createOpen, setCreateOpen] = useState(false);
   const [dragItem, setDragItem] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const opportunities = data?.opportunities || [];
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    if (saving) return;
+    setSaving(true);
     try {
       await apiPost("/api/opportunities", {
         name: form.get("name"),
         contactId: form.get("contactId") || undefined,
         stage: form.get("stage") || "discovery",
         value: form.get("value") ? Number(form.get("value")) : undefined,
+        closeDate: form.get("closeDate") ? dateInputToIso(String(form.get("closeDate"))) : undefined,
       });
       toast.success("Opportunity created");
       setCreateOpen(false);
       refetch();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDrop = async (stage: string) => {
-    if (!dragItem) return;
+    if (!dragItem || !canEdit) return;
     try {
       await apiPatch(`/api/opportunities/${dragItem}`, { stage });
       refetch();
@@ -84,7 +95,7 @@ export default function PipelinePage() {
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!canEdit}>
               <Plus className="h-4 w-4 mr-2" />
               New Opportunity
             </Button>
@@ -107,6 +118,10 @@ export default function PipelinePage() {
                 <Input id="value" name="value" type="number" step="0.01" />
               </div>
               <div>
+                <Label htmlFor="closeDate">Expected / actual close date</Label>
+                <Input id="closeDate" name="closeDate" type="date" />
+              </div>
+              <div>
                 <Label htmlFor="stage">Stage</Label>
                 <select
                   id="stage"
@@ -125,14 +140,14 @@ export default function PipelinePage() {
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button type="submit">Create</Button>
+                <Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create"}</Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {loading ? (
+      {error ? <p role="alert">Could not load pipeline: {error}</p> : loading ? (
         <div className="grid grid-cols-6 gap-4">
           {STAGES.map((s) => (
             <div key={s.key} className="h-64 animate-pulse bg-muted rounded" />
@@ -188,7 +203,7 @@ export default function PipelinePage() {
                   {stageOpps.map((opp: any) => (
                     <Card
                       key={opp.id}
-                      draggable
+                      draggable={canEdit}
                       onDragStart={() => setDragItem(opp.id)}
                       className="cursor-grab active:cursor-grabbing"
                     >
@@ -212,6 +227,13 @@ export default function PipelinePage() {
                                   .join(" ")}
                               </Link>
                             )}
+                            <p className="mt-2 text-xs text-muted-foreground">Close: {opp.closeDate ? new Date(opp.closeDate).toLocaleDateString() : "Not set"}</p>
+                            <label className="mt-2 block text-xs">Stage
+                              <select aria-label={`Stage for ${opp.name}`} className="mt-1 w-full rounded border bg-background p-1" value={opp.stage} disabled={!canEdit} onChange={async e => {
+                                try { await apiPatch(`/api/opportunities/${opp.id}`, { stage: e.target.value }); await refetch(); }
+                                catch (err) { toast.error(err instanceof Error ? err.message : "Could not update stage"); }
+                              }}>{STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+                            </label>
                           </div>
                         </div>
                       </CardContent>

@@ -93,7 +93,8 @@ describe("campaign event ingestion", () => {
     expect(tx.contact.findMany).not.toHaveBeenCalled();
     expect(tx.campaignSyncReceipt.create).toHaveBeenCalledOnce();
     expect(tx.interaction.create).toHaveBeenCalledOnce();
-    expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({ type: "email" });
+    expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({ type: "campaign" });
+    expect(tx.contact.update).not.toHaveBeenCalled();
   });
 
   it("resolves a phone-only contact by unique normalized phone", async () => {
@@ -141,7 +142,7 @@ describe("campaign event ingestion", () => {
     expect(tx.interaction.create).not.toHaveBeenCalled();
   });
 
-  it("logs SMS_SENT as an sms interaction and advances lastTouchAt without touching tags", async () => {
+  it("logs SMS_SENT as campaign telemetry without changing relationship recency", async () => {
     const contact = crmContact({ tags: ["SMS Opt-In"], lastTouchAt: new Date("2026-01-01T00:00:00Z") });
     tx.contact.findMany.mockResolvedValue([contact]);
 
@@ -153,13 +154,10 @@ describe("campaign event ingestion", () => {
       })
     );
 
-    expect(tx.contact.update).toHaveBeenCalledWith({
-      where: { id: contact.id },
-      data: { lastTouchAt: new Date("2026-07-28T20:00:00.000Z") },
-    });
+    expect(tx.contact.update).not.toHaveBeenCalled();
     expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({
       contactId: contact.id,
-      type: "sms",
+      type: "campaign",
       summary: "Sunday Seeds #12 text sent.",
       outcome: "sms_sent",
       occurredAt: new Date("2026-07-28T20:00:00.000Z"),
@@ -179,10 +177,9 @@ describe("campaign event ingestion", () => {
       })
     );
 
-    const update = tx.contact.update.mock.calls[0][0];
-    expect(update.data.tags).toBeUndefined();
+    expect(tx.contact.update).not.toHaveBeenCalled();
     expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({
-      type: "sms",
+      type: "campaign",
       summary: "Sunday Seeds #12 text failed to send (Unreachable destination).",
       outcome: "sms_failed",
     });
@@ -199,8 +196,9 @@ describe("campaign event ingestion", () => {
     expect(update.where).toEqual({ id: contact.id });
     expect([...update.data.tags].sort()).toEqual(["Do Not Text", "VIP"]);
     expect(update.data).not.toHaveProperty("lifecycleStage");
+    expect(update.data).not.toHaveProperty("lastTouchAt");
     expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({
-      type: "sms",
+      type: "campaign",
       summary: "Opted out of SMS (STOP).",
       outcome: "sms_opt_out",
     });
@@ -215,7 +213,7 @@ describe("campaign event ingestion", () => {
     const update = tx.contact.update.mock.calls[0][0];
     expect([...update.data.tags].sort()).toEqual(["SMS Opt-In", "VIP"]);
     expect(tx.interaction.create.mock.calls[0][0].data).toMatchObject({
-      type: "sms",
+      type: "campaign",
       summary: "Opted in to SMS.",
       outcome: "sms_opt_in",
     });

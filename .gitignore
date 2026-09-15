@@ -11,7 +11,12 @@ backups/
 
 # next.js
 /.next/
+/.next-candidate/
 /out/
+
+# Local operator notes may contain CRM/contact/calendar context.
+/docs/CRM_EVALUATION_*.md
+/docs/PROACTIVE_MEETING_FOLLOWUP.md
 
 # production
 /build

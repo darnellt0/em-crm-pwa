@@ -1,5 +1,7 @@
 # Local MVP Feature Audit
 
+> Historical implementation checklist, not proof of current production readiness. The production host keeps a local, unversioned evaluation with observed data quality, current verification, and remaining gaps.
+
 This document tracks the verification of all core CRM features for the local MVP.
 
 | Feature | Status | Evidence | Gaps | Fix Applied |
@@ -26,4 +28,4 @@ This document tracks the verification of all core CRM features for the local MVP
 - The `INTERNAL_SERVICE_TOKEN` is required for the embedding worker to run via cron/n8n.
 
 ## Return on Investment (ROI)
-By hardening this local MVP, Elevated Movements achieves a **100% reduction in SaaS subscription costs** for CRM software, while maintaining full data ownership and privacy. The streamlined, reliable local setup ensures zero downtime from external service outages, directly increasing daily operational efficiency for Darnell and Shria.
+Self-hosting can reduce subscription dependence and improve control of the data. It still has hosting, maintenance, backup, security, and availability costs. Savings, downtime, and business impact have not been measured; no zero-downtime guarantee is implied.

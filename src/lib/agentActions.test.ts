@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   interactionCreate: vi.fn(),
   contactFindUniqueOrThrow: vi.fn(),
   contactUpdate: vi.fn(),
+  contactUpdateMany: vi.fn(),
 }));
 
 const transactionClient = {
@@ -23,6 +24,7 @@ const transactionClient = {
   contact: {
     findUniqueOrThrow: mocks.contactFindUniqueOrThrow,
     update: mocks.contactUpdate,
+    updateMany: mocks.contactUpdateMany,
   },
 };
 
@@ -41,6 +43,18 @@ describe("agent action execution", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.transaction.mockImplementation(async (callback) => callback(transactionClient));
+  });
+
+  it("logs a backdated meeting using its actual date", async () => {
+    mocks.interactionCreate.mockResolvedValue({ id: "i1", type: "meeting" });
+    await executeAgentAction(transactionClient as unknown as Prisma.TransactionClient, { actionType: "log_interaction", contactId: "d2891351-95e3-4c87-a734-49f857260b7e", type: "meeting", summary: "Calendar verified", occurredAt: "2026-08-10T18:30:00Z" }, "reviewer-1");
+    expect(mocks.contactUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { lastTouchAt: new Date("2026-08-10T18:30:00Z") } }));
+  });
+
+  it("logs research notes without changing last contact", async () => {
+    mocks.interactionCreate.mockResolvedValue({ id: "i2", type: "note" });
+    await executeAgentAction(transactionClient as unknown as Prisma.TransactionClient, { actionType: "log_interaction", contactId: "d2891351-95e3-4c87-a734-49f857260b7e", type: "note", summary: "Identity needs review" }, "reviewer-1");
+    expect(mocks.contactUpdateMany).not.toHaveBeenCalled(); expect(mocks.contactUpdate).not.toHaveBeenCalled();
   });
 
   it("creates a task owned by the human reviewer only after execution", async () => {

@@ -130,10 +130,6 @@ export async function POST(req: NextRequest) {
 
       const tags = new Set(contact.tags);
       const occurredAt = new Date(parsed.data.occurredAt);
-      const lastTouchAt =
-        !contact.lastTouchAt || occurredAt > contact.lastTouchAt
-          ? occurredAt
-          : contact.lastTouchAt;
       const tagsChanged = applyEventTags(parsed.data.eventType, tags);
       if (tagsChanged) {
         // Suppression and consent are marketing signals only: add or remove
@@ -144,13 +140,7 @@ export async function POST(req: NextRequest) {
           where: { id: contact.id },
           data: {
             tags: Array.from(tags),
-            lastTouchAt,
           },
-        });
-      } else {
-        await tx.contact.update({
-          where: { id: contact.id },
-          data: { lastTouchAt },
         });
       }
 
@@ -158,7 +148,8 @@ export async function POST(req: NextRequest) {
       await tx.interaction.create({
         data: {
           contactId: contact.id,
-          type: interaction.type,
+          // Provider telemetry is not a person-to-person conversation.
+          type: "campaign",
           summary: interaction.summary,
           outcome: parsed.data.eventType.toLowerCase(),
           occurredAt,

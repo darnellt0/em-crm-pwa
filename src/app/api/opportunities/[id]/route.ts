@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole, handleAuthError } from "@/lib/auth/requireRole";
-import { z } from "zod";
-
-const UpdateOpportunitySchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  value: z.number().positive().optional().nullable(),
-  stage: z.string().min(1).max(50).optional(),
-  closeDate: z.string().datetime().optional().nullable(),
-});
+import { UpdateOpportunitySchema } from "@/lib/validations/opportunity";
 
 export async function PATCH(
   req: NextRequest,

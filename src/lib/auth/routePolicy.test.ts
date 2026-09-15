@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const EXPECTED_ROLE_CALLS: Record<string, string[]> = {
+  "leads/route.ts": ["read_only"],
+  "leads/[id]/route.ts": ["staff"],
   "agent-actions/[id]/decision/route.ts": ["partner_admin"],
   "agent-actions/route.ts": ["read_only"],
   "actions/focus/route.ts": ["read_only"],

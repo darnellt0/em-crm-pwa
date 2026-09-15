@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // API routes return either a string error or a zod flatten() object
 // ({ formErrors: string[], fieldErrors: Record<string, string[]> }).
@@ -27,28 +27,32 @@ export function formatApiError(error: unknown): string {
 }
 
 export function useApi<T>(url: string | null) {
+  const requestVersion = useRef(0);
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(!!url);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     if (!url) return;
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(url);
       const json = await res.json();
-      if (!json.ok) throw new Error(formatApiError(json.error));
-      setData(json);
+      if (!res.ok || !json.ok) throw new Error(formatApiError(json.error));
+      if (version === requestVersion.current) setData(json);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (version === requestVersion.current) setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, [url]);
 
   useEffect(() => {
+    const versionRef = requestVersion;
     refetch();
+    return () => { versionRef.current++; };
   }, [refetch]);
 
   return { data, loading, error, refetch };

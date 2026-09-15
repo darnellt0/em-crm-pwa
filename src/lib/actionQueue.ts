@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db/prisma";
+import { relationshipInteractionWhere } from "@/lib/interactions";
 import {
   calculateActionScore,
   calculateMomentum,
@@ -143,25 +144,23 @@ export async function getPriorityActions(limit = 10): Promise<ActionItem[]> {
   for (const contact of followupContacts) contactIdSet.add(contact.id);
 
   const contactIds = Array.from(contactIdSet);
-  if (contactIds.length === 0) {
-    return [];
-  }
+  const relationship = relationshipInteractionWhere(now);
 
   const [interactionCount30d, interactionsLast7d, interactionsPrevious7d, approvedMemories, lastInteractionDates] =
     await Promise.all([
       prisma.interaction.groupBy({
         by: ["contactId"],
-        where: { contactId: { in: contactIds }, occurredAt: { gte: day30 } },
+        where: { AND: [relationship, { contactId: { in: contactIds }, occurredAt: { gte: day30 } }] },
         _count: { id: true },
       }),
       prisma.interaction.groupBy({
         by: ["contactId"],
-        where: { contactId: { in: contactIds }, occurredAt: { gte: day7 } },
+        where: { AND: [relationship, { contactId: { in: contactIds }, occurredAt: { gte: day7 } }] },
         _count: { id: true },
       }),
       prisma.interaction.groupBy({
         by: ["contactId"],
-        where: { contactId: { in: contactIds }, occurredAt: { gte: day14, lt: day7 } },
+        where: { AND: [relationship, { contactId: { in: contactIds }, occurredAt: { gte: day14, lt: day7 } }] },
         _count: { id: true },
       }),
       prisma.aiMemoryItem.groupBy({
@@ -171,7 +170,7 @@ export async function getPriorityActions(limit = 10): Promise<ActionItem[]> {
       }),
       prisma.interaction.groupBy({
         by: ["contactId"],
-        where: { contactId: { in: contactIds } },
+        where: { AND: [relationship, { contactId: { in: contactIds } }] },
         _max: { occurredAt: true },
       }),
     ]);

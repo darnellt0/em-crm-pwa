@@ -11,9 +11,9 @@
  *     for a human, never silently resolved.
  *  3. Dry run by default. --apply is required to write.
  *
- * Matching order: email (the CRM's unique key), then a unique normalized phone,
- * then first+last name when it is unambiguous. Anything still ambiguous is
- * reported rather than guessed.
+ * Matching uses email (the CRM's unique key), then a unique normalized phone.
+ * Names are only a warning signal and are never used to merge identities.
+ * Anything ambiguous is reported rather than guessed.
  *
  * Two fields in the source have no home in this schema: job title and city.
  * Rather than invent columns, both are folded into the contact note, which is
@@ -26,6 +26,7 @@
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { normalizePhone } from "../src/lib/phone/normalize";
+import { rejectDuplicateSourceIdentities } from "../src/lib/import/sundaySeedsPlan";
 
 const prisma = new PrismaClient();
 const MEMBER_TAG = "Sunday Seeds";
@@ -68,6 +69,10 @@ function readMapping(path: string): Map<number, Approved> {
 type Plan = {
   sheetRow: number; name: string; action: "create" | "update" | "conflict";
   contactId?: string; detail: string[]; conflicts: string[];
+  fields: Record<string, string>;   // blanks to fill, or values for a new contact
+  tags: string[];                   // unioned with whatever the contact already has
+  organisation?: string;            // linked by name, created if unknown
+  note?: string;                    // written as a proposed memory item
 };
 
 async function main() {
@@ -121,8 +126,8 @@ async function main() {
     }
     if (!match && first && last) {
       const hits = byName.get(`${lower(first)}|${lower(last)}`) ?? [];
-      if (hits.length === 1) { match = hits[0]; how = "name"; }
-      else if (hits.length > 1) conflicts.push(`${hits.length} CRM contacts share this name`);
+      if (hits.length === 1) conflicts.push("one CRM contact shares this name, but name-only matching is disabled");
+      else if (hits.length > 1) conflicts.push(`${hits.length} CRM contacts share this name; exact identity review is required`);
     }
 
     const approved = mapping.get(sheetRow);
@@ -141,23 +146,42 @@ async function main() {
       if (email && match.email && lower(match.email) !== email) conflicts.push(`CRM has ${match.email}, sheet has ${email}`);
       if (phone && match.phoneNormalized && match.phoneNormalized !== phone) conflicts.push(`CRM has phone ${match.phoneNormalized}, sheet has ${phone}`);
       if (email && !match.email) detail.push(`set email ${email}`);
-      if (phone && !match.phoneNormalized) detail.push(`set phone ${phone}`);
+      if (phone && !match.phoneNormalized) detail.push(match.phone ? `normalize existing phone as ${phone}` : `set phone ${phone}`);
       const newTags = [...wantTags].filter((t) => !match!.tags.includes(t));
       if (newTags.length) detail.push(`add tags ${newTags.join(", ")}`);
       if (approved?.organisation && !match.organizationId) detail.push(`link organisation "${approved.organisation}"`);
       if (noteBits.length) detail.push("add a note for review");
-      plans.push({ sheetRow, name, action: conflicts.length ? "conflict" : "update", contactId: match.id, detail: [`matched by ${how}`, ...detail], conflicts });
+      const fields: Record<string, string> = {};
+      if (email && !match.email) fields.email = email;
+      if (phone && !match.phoneNormalized) {
+        if (!match.phone) fields.phone = phoneRaw;
+        fields.phoneNormalized = phone;
+      }
+      plans.push({ sheetRow, name, action: conflicts.length ? "conflict" : "update", contactId: match.id,
+        detail: [`matched by ${how}`, ...detail], conflicts, fields, tags: [...wantTags],
+        organisation: approved?.organisation && !match.organizationId ? approved.organisation : undefined,
+        note: noteBits.length ? noteBits.join(" ") : undefined });
     } else {
       if (!email && !phone) conflicts.push("no email and no usable phone, so this row cannot be identified");
       detail.push(`create contact${email ? ` with ${email}` : ""}${phone ? ` / ${phone}` : ""}`);
       detail.push(`tags ${[...wantTags].join(", ")}`);
       if (approved?.organisation) detail.push(`link organisation "${approved.organisation}"`);
       if (noteBits.length) detail.push("add a note for review");
-      plans.push({ sheetRow, name, action: conflicts.length ? "conflict" : "create", detail, conflicts });
+      const fields: Record<string, string> = { firstName: first, lastName: last, source: SOURCE };
+      if (email) fields.email = email;
+      if (phone) { fields.phone = phoneRaw; fields.phoneNormalized = phone; }
+      plans.push({ sheetRow, name, action: conflicts.length ? "conflict" : "create", detail, conflicts,
+        fields, tags: [...wantTags], organisation: approved?.organisation,
+        note: noteBits.length ? noteBits.join(" ") : undefined });
     }
 
     if (noteBits.length) memories.push({ contactKey: name, content: noteBits.join(" ") });
   }
+
+  // Reject duplicate identities inside the source itself. The database indexes
+  // above are a snapshot, so without this pass two new rows with the same email
+  // would both be planned as creates and fail only after the first write.
+  rejectDuplicateSourceIdentities(plans);
 
   // --- report ---
   const creates = plans.filter((p) => p.action === "create");
@@ -181,9 +205,80 @@ async function main() {
   console.log("\n--- sample of planned creates ---");
   for (const p of creates.slice(0, 8)) console.log(`  row ${p.sheetRow} ${p.name}: ${p.detail.join("; ")}`);
 
-  if (!apply) { console.log("\nRe-run with --apply to write these changes."); await prisma.$disconnect(); return; }
-  console.log("\n--apply given, but writing is not implemented in this build; review the plan first.");
-  await prisma.$disconnect();
+  if (!apply) { console.log("\nRe-run with --apply to write these changes."); return; }
+
+  // Apply the entire reviewed batch atomically. A unique-key error, stale
+  // contact, or note failure rolls every organization/contact/note write back.
+  const result = await prisma.$transaction(async (tx) => {
+    const orgCache = new Map<string, string>();
+    async function organisationId(name: string) {
+      const key = name.trim().toLowerCase();
+      if (orgCache.has(key)) return orgCache.get(key)!;
+      const found = await tx.organization.findFirst({ where: { name: { equals: name.trim(), mode: "insensitive" } } });
+      const org = found ?? (await tx.organization.create({ data: { name: name.trim() } }));
+      orgCache.set(key, org.id);
+      return org.id;
+    }
+
+    let created = 0, updated = 0, notes = 0;
+    for (const plan of [...updates, ...creates]) {
+      const orgId = plan.organisation ? await organisationId(plan.organisation) : undefined;
+      let contactId = plan.contactId;
+
+      if (plan.action === "create") {
+        const contact = await tx.contact.create({
+          data: { ...plan.fields, tags: plan.tags, ...(orgId ? { organizationId: orgId } : {}) } as never
+        });
+        contactId = contact.id;
+        created++;
+      } else if (contactId) {
+        const existing = await tx.contact.findUniqueOrThrow({
+          where: { id: contactId },
+          select: { tags: true, email: true, phone: true, phoneNormalized: true, organizationId: true, updatedAt: true },
+        });
+        const fields = { ...plan.fields };
+        if (fields.email && existing.email) {
+          if (lower(existing.email) !== lower(fields.email)) throw new Error(`IMPORT_STALE: email changed for contact ${contactId}`);
+          delete fields.email;
+        }
+        if (fields.phoneNormalized && existing.phoneNormalized) {
+          if (existing.phoneNormalized !== fields.phoneNormalized) throw new Error(`IMPORT_STALE: phone changed for contact ${contactId}`);
+          delete fields.phoneNormalized;
+          delete fields.phone;
+        }
+        if (fields.phone && existing.phone) delete fields.phone;
+        if (orgId && existing.organizationId && existing.organizationId !== orgId) {
+          throw new Error(`IMPORT_STALE: organization changed for contact ${contactId}`);
+        }
+        const tags = [...new Set([...existing.tags, ...plan.tags])];
+        const changed = await tx.contact.updateMany({
+          where: { id: contactId, updatedAt: existing.updatedAt },
+          data: { ...fields, tags, ...(orgId && !existing.organizationId ? { organizationId: orgId } : {}) } as never
+        });
+        if (!changed.count) throw new Error(`IMPORT_STALE: contact ${contactId} changed during apply`);
+        updated++;
+      }
+
+      // Proposed notes are idempotent across safe retries of this one-off job.
+      if (contactId && plan.note) {
+        const existingNote = await tx.aiMemoryItem.findFirst({
+          where: { contactId, content: plan.note, status: "proposed", proposedBy: "sunday-seeds-import" },
+          select: { id: true },
+        });
+        if (!existingNote) {
+          await tx.aiMemoryItem.create({
+            data: { contactId, content: plan.note, status: "proposed", proposedBy: "sunday-seeds-import" }
+          });
+          notes++;
+        }
+      }
+    }
+    return { created, updated, notes };
+  }, { timeout: 300000 });
+
+  console.log("");
+  console.log(`created ${result.created} contact(s), updated ${result.updated}, queued ${result.notes} note(s) for review.`);
+  console.log(`skipped ${issues.length} row(s) that need a human.`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => prisma.$disconnect());
