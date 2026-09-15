@@ -45,10 +45,30 @@ mobile/android/app/build/outputs/apk/debug/app-debug.apk
 
 ## Release build
 
-Create and protect a release keystore outside the repository, configure Android
-Studio signing, and build an Android App Bundle. Use the final release/Play App
-Signing SHA-256 fingerprint in `ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS` as
-described in [ASSOCIATED_LINKS.md](ASSOCIATED_LINKS.md).
+The release signing key and its Windows-protected credential stay outside the
+repository under `%LOCALAPPDATA%\ElevatedMovements\Signing`. Build a signed
+Android App Bundle without exposing the password on the command line:
+
+```powershell
+cd mobile
+npm run release:android
+```
+
+The Play-ready bundle is written to
+`android/app/build/outputs/bundle/release/app-release.aab`, and the directly
+installable signed APK is written to
+`android/app/build/outputs/apk/release/app-release.apk`. The script prints the
+upload certificate SHA-256 fingerprint; configure that fingerprint for direct
+or internal distribution. If Google Play App Signing is enabled, also add the
+Play App Signing certificate fingerprint to
+`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS` as described in
+[ASSOCIATED_LINKS.md](ASSOCIATED_LINKS.md).
+
+Install the signed APK on a connected test device with:
+
+```powershell
+adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
 
 ## Test links
 

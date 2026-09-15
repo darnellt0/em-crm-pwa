@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   webDir: "www",
   backgroundColor: "#ffffff",
   appendUserAgent: " EMCRM/1.0",
-  loggingBehavior: "debug",
+  loggingBehavior: "none",
   server: {
     androidScheme: "https",
     cleartext: false,

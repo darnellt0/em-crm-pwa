@@ -17,6 +17,7 @@
     "sync:ios": "npm run build && cap sync ios && node scripts/fix-ios-package-paths.mjs",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
+    "release:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android-release.ps1",
     "assets": "capacitor-assets generate --android --ios",
     "doctor": "cap doctor"
   },

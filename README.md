@@ -261,6 +261,9 @@ npm run assets
 npm run sync
 npm run open:android
 npm run open:ios      # macOS only
+
+# On the protected Windows signing workstation:
+npm run release:android
 ```
 
 Use `npm run sync:android` on Windows when the iOS project has not been created.
@@ -272,6 +275,9 @@ or bypassing authentication. Verified HTTPS magic-link handoff additionally
 requires the public Android signing fingerprint and Apple Team ID. See
 [`mobile/README.md`](mobile/README.md) and
 [`mobile/ASSOCIATED_LINKS.md`](mobile/ASSOCIATED_LINKS.md).
+
+`npm run release:android` creates both a Play-ready signed AAB and a directly
+installable signed APK without storing the keystore password in Git.
 
 The root-level `manifest.json` and duplicate icons remain only as historical PWA
 assets; the deployed web manifest is `public/manifest.json`.

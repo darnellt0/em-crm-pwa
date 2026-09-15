@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+def emCrmKeystorePath = System.getenv('EM_CRM_ANDROID_KEYSTORE')
+def emCrmKeystorePassword = System.getenv('EM_CRM_ANDROID_KEYSTORE_PASSWORD')
+def emCrmKeyAlias = System.getenv('EM_CRM_ANDROID_KEY_ALIAS')
+def emCrmKeyPassword = System.getenv('EM_CRM_ANDROID_KEY_PASSWORD') ?: emCrmKeystorePassword
+def hasEmCrmReleaseSigning = [
+    emCrmKeystorePath,
+    emCrmKeystorePassword,
+    emCrmKeyAlias,
+    emCrmKeyPassword,
+].every { it != null && !it.trim().isEmpty() }
+
 android {
     namespace = "com.elevatedmovements.crm"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,11 +27,33 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasEmCrmReleaseSigning) {
+                storeFile file(emCrmKeystorePath)
+                storePassword emCrmKeystorePassword
+                keyAlias emCrmKeyAlias
+                keyPassword emCrmKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasEmCrmReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def buildsReleaseArtifact = graph.allTasks.any {
+        it.path == ':app:bundleRelease' || it.path == ':app:assembleRelease'
+    }
+    if (buildsReleaseArtifact && !hasEmCrmReleaseSigning) {
+        throw new GradleException('Release signing is not configured. Run npm run release:android from mobile/.')
     }
 }
 

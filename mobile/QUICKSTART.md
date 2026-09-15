@@ -18,6 +18,17 @@ npm run open:android
 In Android Studio, wait for Gradle sync, select an emulator or connected phone,
 and click **Run**.
 
+Create the signed release bundle on the protected signing workstation:
+
+```powershell
+npm run release:android
+```
+
+Outputs:
+
+- Google Play: `android/app/build/outputs/bundle/release/app-release.aab`
+- Direct install: `android/app/build/outputs/apk/release/app-release.apk`
+
 Test the custom link:
 
 ```powershell

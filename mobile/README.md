@@ -61,6 +61,24 @@ npm run open:ios
 After any change under `mobile/src/`, run `npm run sync` before rebuilding in
 Android Studio or Xcode.
 
+## Signed Android release
+
+The protected upload key is stored outside Git under
+`%LOCALAPPDATA%\ElevatedMovements\Signing`. On the signing workstation, create
+the release bundle with:
+
+```powershell
+npm run sync:android
+npm run release:android
+```
+
+The command decrypts the password only for the build process and uses Android
+Studio's bundled JDK. It writes a Play-ready AAB to
+`android/app/build/outputs/bundle/release/app-release.aab` and a directly
+installable signed APK to
+`android/app/build/outputs/apk/release/app-release.apk`. Do not move the
+keystore, credential XML, or password into this repository.
+
 ## Deep links and magic-link sign-in
 
 The app accepts both forms:
