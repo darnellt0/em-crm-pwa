@@ -11,6 +11,11 @@
  * in that group is marked merge. A group marked "separate" is left alone; the
  * contacts share a phone but are different people.
  *
+ * A row marked "delete" removes that contact outright, for the empty
+ * placeholder records that stand in for nobody. It is refused unless the record
+ * really is empty — no email, no phone and no history — so a mis-marked row
+ * cannot discard a real person.
+ *
  * Usage:
  *   pnpm exec tsx tools/merge-contacts.ts --decisions <decisions.json>
  *   pnpm exec tsx tools/merge-contacts.ts --decisions <decisions.json> --apply
@@ -32,7 +37,7 @@ async function main() {
   const groups = new Map<string, Decision[]>();
   for (const d of decisions) groups.set(d.group, [...(groups.get(d.group) ?? []), d]);
 
-  let merged = 0, skipped = 0, separated = 0;
+  let merged = 0, skipped = 0, separated = 0, deleted = 0;
   console.log(`\n${apply ? "APPLYING" : "DRY RUN — nothing will be written"}\n`);
 
   for (const [group, rows] of groups) {
@@ -41,6 +46,35 @@ async function main() {
     const separate = rows.filter((r) => r.decision === "separate");
 
     if (separate.length) { console.log(`${group}: left alone (marked separate)`); separated++; continue; }
+
+    const doomed = rows.filter((r) => r.decision === "delete");
+    if (doomed.length) {
+      if (doomed.length !== rows.length) {
+        console.log(`${group}: SKIPPED — mixes delete with other decisions; split it into its own group`);
+        skipped++; continue;
+      }
+      const victims = await prisma.contact.findMany({
+        where: { id: { in: doomed.map((d) => d.crmId) } },
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phoneNormalized: true,
+          _count: { select: { interactions: true, tasks: true, opportunities: true, invoices: true, enrollments: true, memories: true } }
+        }
+      });
+      const unsafe = victims.filter(
+        (v) => v.email || v.phoneNormalized || Object.values(v._count).some((n) => n > 0)
+      );
+      if (unsafe.length) {
+        for (const v of unsafe) {
+          console.log(`${group}: REFUSED to delete ${v.firstName ?? ""} ${v.lastName ?? ""} (${v.id.slice(0, 8)}) — it holds a contact detail or history`);
+        }
+        skipped++; continue;
+      }
+      console.log(`${group}: delete ${victims.length} empty placeholder(s): ${victims.map((v) => `${v.firstName ?? ""} ${v.lastName ?? ""}`.trim() || "(no name)").join(", ")}`);
+      if (apply) await prisma.contact.deleteMany({ where: { id: { in: victims.map((v) => v.id) } } });
+      deleted += victims.length;
+      continue;
+    }
+
     if (keepers.length !== 1 || losers.length !== rows.length - 1) {
       console.log(`${group}: SKIPPED — needs exactly one keep and the rest merge (got ${keepers.length} keep, ${losers.length} merge, ${rows.length} rows)`);
       skipped++; continue;
@@ -96,9 +130,10 @@ async function main() {
     merged++;
   }
 
-  console.log(`\ngroups merged   : ${merged}`);
-  console.log(`groups separate : ${separated}`);
-  console.log(`groups skipped  : ${skipped}`);
+  console.log(`\ngroups merged       : ${merged}`);
+  console.log(`groups separate     : ${separated}`);
+  console.log(`groups skipped      : ${skipped}`);
+  console.log(`placeholders deleted: ${deleted}`);
   if (!apply) console.log("\nRe-run with --apply to write these changes.");
   await prisma.$disconnect();
 }
