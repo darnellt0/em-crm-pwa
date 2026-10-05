@@ -37,7 +37,18 @@ npm install
 npm run build
 ```
 
-`npm run build` bundles `src/app.js` and copies the local shell to `www/`.
+`npm run build` bundles `src/app.js`, stamps the service-worker cache with a
+content hash, and copies the local shell to `www/`. The hash prevents an old
+cached shell from surviving a native app update.
+
+Before creating a store release, increment both platforms together:
+
+```powershell
+npm run version:bump -- patch
+```
+
+Use `minor` or `major` instead of `patch` when appropriate. The command updates
+the shared marketing version, Android version code, and iOS build number.
 
 ## Native platforms
 
@@ -72,12 +83,14 @@ npm run sync:android
 npm run release:android
 ```
 
-The command decrypts the password only for the build process and uses Android
-Studio's bundled JDK. It writes a Play-ready AAB to
+The command auto-detects the Android SDK, decrypts the password only for the
+build process, and uses Android Studio's bundled JDK. It writes a Play-ready AAB to
 `android/app/build/outputs/bundle/release/app-release.aab` and a directly
 installable signed APK to
-`android/app/build/outputs/apk/release/app-release.apk`. Do not move the
-keystore, credential XML, or password into this repository.
+`android/app/build/outputs/apk/release/app-release.apk`. It verifies both
+signatures and writes SHA-256 hashes to
+`android/app/build/outputs/release-checksums.sha256`. Do not move the keystore,
+credential XML, or password into this repository.
 
 ## Deep links and magic-link sign-in
 
@@ -100,6 +113,8 @@ configured on the deployed CRM. See [ASSOCIATED_LINKS.md](ASSOCIATED_LINKS.md).
 
 - Only HTTPS `crm.elevatedmovements.com` navigation is allowed in the app.
 - Android cleartext and mixed content are disabled.
+- Android cloud backup and device-to-device transfer are disabled for WebView
+  data, preventing authenticated session state from being restored elsewhere.
 - Incoming URLs are parsed and checked before navigation.
 - Authentication remains Auth.js email magic links and the existing email
   allowlist. The mobile client contains no service tokens or secrets.

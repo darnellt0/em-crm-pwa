@@ -21,6 +21,8 @@ and click **Run**.
 Create the signed release bundle on the protected signing workstation:
 
 ```powershell
+npm run version:bump -- patch  # once per new store release
+npm run sync:android
 npm run release:android
 ```
 
@@ -28,6 +30,7 @@ Outputs:
 
 - Google Play: `android/app/build/outputs/bundle/release/app-release.aab`
 - Direct install: `android/app/build/outputs/apk/release/app-release.apk`
+- SHA-256 verification: `android/app/build/outputs/release-checksums.sha256`
 
 Test the custom link:
 

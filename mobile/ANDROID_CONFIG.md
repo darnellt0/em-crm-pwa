@@ -8,6 +8,7 @@ The generated Android project is configured for:
 - HTTPS App Links on `crm.elevatedmovements.com`
 - camera, microphone, internet, and network-state permissions
 - no cleartext traffic
+- no cloud backup or device-to-device transfer of WebView/session data
 
 After changing web code or Capacitor dependencies:
 
@@ -51,14 +52,18 @@ Android App Bundle without exposing the password on the command line:
 
 ```powershell
 cd mobile
+npm run version:bump -- patch  # once per new store release
+npm run sync:android
 npm run release:android
 ```
 
 The Play-ready bundle is written to
 `android/app/build/outputs/bundle/release/app-release.aab`, and the directly
 installable signed APK is written to
-`android/app/build/outputs/apk/release/app-release.apk`. The script prints the
-upload certificate SHA-256 fingerprint; configure that fingerprint for direct
+`android/app/build/outputs/apk/release/app-release.apk`. The script auto-detects
+the Android SDK, verifies both signatures, and writes artifact hashes to
+`android/app/build/outputs/release-checksums.sha256`. It also prints the upload
+certificate SHA-256 fingerprint; configure that fingerprint for direct
 or internal distribution. If Google Play App Signing is enabled, also add the
 Play App Signing certificate fingerprint to
 `ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS` as described in
