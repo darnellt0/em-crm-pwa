@@ -1,4 +1,6 @@
-const CACHE_NAME = "em-crm-mobile-shell-v1";
+// Replaced with a content hash by scripts/build.mjs. A new native shell build
+// therefore installs a new cache instead of serving stale app.js or styles.css.
+const CACHE_NAME = "em-crm-mobile-shell-__CACHE_VERSION__";
 const SHELL_FILES = ["./", "./index.html", "./app.js", "./styles.css"];
 
 self.addEventListener("install", (event) => {

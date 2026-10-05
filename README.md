@@ -263,6 +263,8 @@ npm run open:android
 npm run open:ios      # macOS only
 
 # On the protected Windows signing workstation:
+npm run version:bump -- patch  # once per new store release
+npm run sync:android
 npm run release:android
 ```
 
@@ -277,7 +279,8 @@ requires the public Android signing fingerprint and Apple Team ID. See
 [`mobile/ASSOCIATED_LINKS.md`](mobile/ASSOCIATED_LINKS.md).
 
 `npm run release:android` creates both a Play-ready signed AAB and a directly
-installable signed APK without storing the keystore password in Git.
+installable signed APK without storing the keystore password in Git. It also
+verifies their signatures and emits SHA-256 checksums.
 
 The root-level `manifest.json` and duplicate icons remain only as historical PWA
 assets; the deployed web manifest is `public/manifest.json`.
